@@ -22,7 +22,7 @@ The project name, logo, and branding are not licensed for use in a way that sugg
     1. Check the repository for version and release tags. Can be requested by @latest @v1.0.3 suffixes.
 
 ```bash
-go install github.com/andreaswillibaldweber/marktex/marktex
+go install github.com/andreaswillibaldweber/marktex/cmd/marktex@latest
 ```
 
 ## Build and run
