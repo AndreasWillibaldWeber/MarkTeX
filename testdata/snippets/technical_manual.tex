@@ -1,0 +1,200 @@
+\section{MarkTeX Technical Reference}
+
+\subsection{Overview}
+
+MarkTeX converts Markdown to LaTeX via a typed AST. All source files are UTF-8; output targets \texttt{pdflatex}, \texttt{xelatex}, or \texttt{lualatex} with the packages listed in Table~\ref{tab:tab_extensions}.
+
+\subsubsection{Design Goals}
+
+\begin{enumerate}
+  \item \textbf{Correctness}: special characters are always escaped (see Table~\ref{tab:tab_escaping}).
+  \item \textbf{Extensibility}: new constructs follow the five-step pattern described in~\cite{knuth1986}.
+  \item \textbf{Transparency}: the AST is the only boundary between parsing and generation, as specified in~\cite{latex2023guide}.
+\end{enumerate}
+
+
+\noindent\rule{\linewidth}{0.4pt}
+
+\subsection{Definition Blocks}
+
+A \texttt{---…---} block defines all reference keys and document metadata in one place. Multiple entry types may coexist in the same block:
+
+\begin{lstlisting}[language=markdown]
+---
+C#01:knuth1986
+F#01:my_figure
+T#01:my_table
+Author: Ada Lovelace
+Title: My Document
+MakeTOC
+---
+\end{lstlisting}
+
+The block is pre-scanned before parsing begins, so keys defined at the bottom of a file are available at the top. A \texttt{---} line that is not followed by a recognised entry type is treated as a thematic break (\texttt{\textbackslash{}noindent\textbackslash{}rule\{\textbackslash{}linewidth\}\{0.4pt\}}).
+
+
+\noindent\rule{\linewidth}{0.4pt}
+
+\subsection{AST Node Types}
+
+Table~\ref{tab:my_table} lists all block and inline node types with their LaTeX counterparts.
+
+\begin{table}[H]
+\centering
+\caption{Complete node-type reference. Leaf nodes have no children. See Figure~\ref{fig:my_figure} for the hierarchy.}
+\begin{tabular}{lclc}
+\toprule
+Node type & Category & LaTeX output & Leaf \\
+\midrule
+Document & block & (root) & no \\
+Heading & block & \texttt{\textbackslash{}section}, \texttt{\textbackslash{}subsection}, … & no \\
+Paragraph & block & text + \texttt{\textbackslash{}n\textbackslash{}n} & no \\
+BulletList & block & \texttt{\textbackslash{}begin\{itemize\}} & no \\
+OrderedList & block & \texttt{\textbackslash{}begin\{enumerate\}} & no \\
+ListItem & block & \texttt{\textbackslash{}item} & no \\
+BlockQuote & block & \texttt{\textbackslash{}begin\{quote\}} & no \\
+FencedCode & block & \texttt{\textbackslash{}begin\{lstlisting\}} & yes \\
+IndentedCode & block & \texttt{\textbackslash{}begin\{verbatim\}} & yes \\
+ThematicBreak & block & \texttt{\textbackslash{}noindent\textbackslash{}rule\{…\}} & yes \\
+Table & block & \texttt{\textbackslash{}begin\{tabular\}} & no \\
+TableBlock & block & \texttt{\textbackslash{}begin\{table\}…\textbackslash{}end\{table\}} & no \\
+DefinitionBlock & block & (invisible) & yes \\
+FigureBlock & block & (invisible) & yes \\
+Text & inline & escaped text & yes \\
+Strong & inline & \texttt{\textbackslash{}textbf\{\}} & no \\
+Emphasis & inline & \texttt{\textbackslash{}textit\{\}} & no \\
+StrongEmphasis & inline & \texttt{\textbackslash{}textbf\{\textbackslash{}textit\{\}\}} & no \\
+CodeSpan & inline & \texttt{\textbackslash{}texttt\{\}} & yes \\
+Strikethrough & inline & \texttt{\textbackslash{}sout\{\}} & no \\
+Link & inline & \texttt{\textbackslash{}href\{\}\{\}} & no \\
+Image & inline & \texttt{\textbackslash{}includegraphics\{\}} & no \\
+FigureImage & inline & \texttt{\textbackslash{}begin\{figure\}…\textbackslash{}end\{figure\}} & yes \\
+CitationRef & inline & \texttt{\textasciitilde{}\textbackslash{}cite\{\}} & yes \\
+FigureRef & inline & \texttt{\textasciitilde{}\textbackslash{}ref\{fig:\}} & yes \\
+TableRef & inline & \texttt{\textasciitilde{}\textbackslash{}ref\{tab:\}} & yes \\
+\bottomrule
+\end{tabular}
+\label{tab:my\_table}
+\end{table}
+
+
+\noindent\rule{\linewidth}{0.4pt}
+
+\subsection{Special Character Escaping}
+
+Table~\ref{tab:tab_escaping} shows the ten LaTeX special characters and their escaped forms.
+
+\begin{table}[ht]
+\centering
+\caption{LaTeX special-character escape table. Escaping is \textbf{not} applied inside \texttt{lstlisting} or \texttt{verbatim} environments, nor inside URL arguments to \texttt{\textbackslash{}href\{\}}. See~\cite{latex2023guide} for details.}
+\begin{tabular}{lll}
+\toprule
+Character & Name & LaTeX output \\
+\midrule
+\texttt{\textbackslash{}} & backslash & \texttt{\textbackslash{}textbackslash\{\}} \\
+\texttt{\{} & left brace & \texttt{\textbackslash{}\{} \\
+\texttt{\}} & right brace & \texttt{\textbackslash{}\}} \\
+\texttt{\$} & dollar & \texttt{\textbackslash{}\$} \\
+\texttt{\&} & ampersand & \texttt{\textbackslash{}\&} \\
+\texttt{\#} & hash & \texttt{\textbackslash{}\#} \\
+\texttt{\%} & percent & \texttt{\textbackslash{}\%} \\
+\texttt{\_} & underscore & \texttt{\textbackslash{}\_} \\
+\texttt{\textasciicircum{}} & caret & \texttt{\textbackslash{}textasciicircum\{\}} \\
+\texttt{\textasciitilde{}} & tilde & \texttt{\textbackslash{}textasciitilde\{\}} \\
+\bottomrule
+\end{tabular}
+\label{tab:tab\_escaping}
+\end{table}
+
+
+\noindent\rule{\linewidth}{0.4pt}
+
+\subsection{Figures}
+
+Figure~\ref{fig:my_figure} shows the overall architecture. Figure~\ref{fig:fig_flow} shows the data flow in detail, and Figure~\ref{fig:fig_output} shows a sample output page.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=1.0\linewidth]{figures/arch.png}
+  \caption{System architecture overview. See~\cite{knuth1986} for the Go implementation.}
+  \label{fig:my\_figure}
+\end{figure}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.8\linewidth]{figures/flow.png}
+  \caption{Data-flow diagram. The pre-scan phase resolves~\cite{knuth1986},~\ref{fig:my_figure}, and~\ref{tab:my_table} references before parsing.}
+  \label{fig:fig\_flow}
+\end{figure}
+
+\begin{figure}[hb]
+  \centering
+  \includegraphics[width=0.6\linewidth]{figures/output.png}
+  \caption{Sample LaTeX output. The document uses packages listed in Table~\ref{tab:tab_extensions}.}
+  \label{fig:fig\_output}
+\end{figure}
+
+
+\noindent\rule{\linewidth}{0.4pt}
+
+\subsection{Extensions Reference}
+
+Table~\ref{tab:tab_extensions} lists all available extensions, the LaTeX packages they require, and the \texttt{-ext} token used on the command line.
+
+\begin{table}[ht]
+\centering
+\caption{Extension reference. Packages marked * are only included when actually used. See Figure~\ref{fig:my_figure} for where each extension fits in the pipeline.}
+\begin{tabular}{lll}
+\toprule
+\texttt{-ext} token & Feature & Required package \\
+\midrule
+\texttt{tables} & GFM pipe tables & \texttt{booktabs} * \\
+\texttt{strikethrough} & \texttt{\textasciitilde{}\textasciitilde{}text\textasciitilde{}\textasciitilde{}} & \texttt{ulem} * \\
+\texttt{citations} & \texttt{[C\#key]} → \texttt{\textbackslash{}cite\{\}} & — \\
+\texttt{figures} & \texttt{[F\#key]} → \texttt{\textbackslash{}ref\{fig:\}} & \texttt{graphicx} * \\
+\texttt{tableFloat} & \texttt{[T\#key]} → \texttt{\textbackslash{}ref\{tab:\}} & \texttt{booktabs} * \\
+\texttt{documentMeta} & \texttt{Author:}, \texttt{MakeTOC}, … & — \\
+\texttt{all} & All of the above & as needed \\
+\bottomrule
+\end{tabular}
+\label{tab:tab\_extensions}
+\end{table}
+
+
+\noindent\rule{\linewidth}{0.4pt}
+
+\subsection{Inline Formatting Reference}
+
+The following examples show all inline constructs in context. A \sout{deprecated} feature is shown for completeness. The \texttt{\textbackslash{}texttt\{monospace\}} style is used for \texttt{inline code}. \textbf{Bold text} and \textit{italic text} and \textbf{\textit{bold-italic text}} are all supported. Links render as \texttt{\textbackslash{}href\{url\}\{text\}} — for example \href{https://go.dev/ref/spec}{the Go specification}.
+
+Hard line break example (two trailing spaces): First line. Second line after hard break.
+
+\begin{quote}
+Blockquotes nest the content in \texttt{\textbackslash{}begin\{quote\}…\textbackslash{}end\{quote\}}. A citation~\cite{latex2023guide} and a figure reference~\ref{fig:my_figure} both resolve correctly inside a blockquote.
+
+\end{quote}
+
+
+\noindent\rule{\linewidth}{0.4pt}
+
+\subsection{Standalone Output}
+
+When \texttt{-standalone} is active, the preamble includes only the packages the document actually needs. For a document with code listings, tables, images, and strikethrough, the generated preamble is:
+
+\begin{lstlisting}[language=latex]
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[a4paper, margin=2.5cm]{geometry}
+\usepackage[hidelinks, unicode]{hyperref}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage[normalem]{ulem}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\end{lstlisting}
+
+Document metadata (\texttt{Author:}, \texttt{Title:}, etc.) is placed immediately before \texttt{\textbackslash{}begin\{document\}}, and front-matter commands (\texttt{\textbackslash{}maketitle}, \texttt{\textbackslash{}tableofcontents}, etc.) are placed immediately after it.
+
