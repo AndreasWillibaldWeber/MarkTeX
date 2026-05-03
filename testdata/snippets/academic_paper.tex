@@ -1,0 +1,169 @@
+\section{Introduction}
+
+Markdown-to-LaTeX conversion has been studied extensively~\cite{knuth1986texbook}. The \texttt{TeX} typesetting system~\cite{lamport1994latex} remains the standard for academic publishing, while Markdown~\cite{gruber2004markdown} has become the dominant lightweight markup language for technical writing. This paper presents MarkTeX, a transpiler that bridges the two.
+
+The CommonMark specification~\cite{commonmark2021spec} defines the authoritative Markdown grammar; our parser targets a strict subset of it, extended with custom syntax for cross-references and document metadata.
+
+\subsection{Motivation}
+
+Three problems motivate this work:
+
+\begin{enumerate}
+  \item Existing tools~\cite{knuth1986texbook} require \textbf{complex configuration} to produce well-structured LaTeX output.
+  \item Reference management is \textit{manual} in most pipelines.
+  \item \textbf{\textit{No open standard}} exists for embedding LaTeX-specific constructs in Markdown source.
+\end{enumerate}
+
+The following sections address each problem in turn.
+
+
+\noindent\rule{\linewidth}{0.4pt}
+
+\section{Architecture}
+
+As shown in Figure~\ref{fig:fig_pipeline}, the MarkTeX pipeline consists of three stages: \textbf{lexical analysis}, \textit{AST construction}, and \textbf{\textit{code generation}}.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.9\linewidth]{figures/pipeline.png}
+  \caption{The three-stage transpilation pipeline, adapted from~\cite{gruber2004markdown}.}
+  \label{fig:fig\_pipeline}
+\end{figure}
+
+\subsection{Parser}
+
+The parser follows the two-phase approach of~\cite{commonmark2021spec}: a block pass identifies structural elements, and an inline pass handles emphasis, code spans, and custom references. The grammar is implemented without backtracking; ambiguous constructs default to the CommonMark resolution rules.
+
+Block-level elements recognised by the parser:
+
+\begin{itemize}
+  \item \textbf{Headings}: ATX (\texttt{\# H1} through \texttt{\#\#\#\#\#\# H6}) and setext (\texttt{===}, \texttt{---})
+  \item \textbf{Lists}: bullet (\texttt{-}, \texttt{*}, \texttt{+}) and ordered (\texttt{1.}, \texttt{2.}, …) with tight/loose detection
+  \item \textbf{Code}: fenced (\texttt{```}) and indented (4-space)
+  \item \textbf{Tables}: GFM pipe tables with \texttt{:---}, \texttt{---:}, \texttt{:---:} alignment
+  \item \textbf{Block quotes} and \textbf{thematic breaks}
+\end{itemize}
+
+Inline elements recognised:
+
+\begin{itemize}
+  \item Emphasis (\texttt{*}, \texttt{\_}), strong (\texttt{**}), strong-emphasis (\texttt{***})
+  \item Code spans (\texttt{`}), strikethrough (\texttt{\textasciitilde{}\textasciitilde{}})
+  \item Links \texttt{[text](url)} and images \texttt{![alt](url)}
+  \item Custom refs: \texttt{[C\#key]}, \texttt{[F\#key]}, \texttt{[T\#key]}
+\end{itemize}
+
+\subsection{AST}
+
+The internal AST is depicted in Figure~\ref{fig:fig_ast}. Every node carries a source position for error reporting.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.7\linewidth]{figures/ast.png}
+  \caption{AST node hierarchy. Block nodes are shown above the dashed line; inline nodes below. See Table~\ref{tab:tab_comparison} for node-count statistics.}
+  \label{fig:fig\_ast}
+\end{figure}
+
+Each node type implements a \texttt{Type() NodeType} method. Traversal is handled by a single \texttt{Walk} function; visitors implement \texttt{Enter*/Leave*} pairs and embed \texttt{BaseVisitor} for default no-op behaviour.
+
+\subsubsection{Extension Mechanism}
+
+\begin{quote}
+Adding a new construct requires five deterministic steps: define the AST node, extend the \texttt{Visitor} interface, provide a \texttt{BaseVisitor} no-op, register the dispatch case in \texttt{Walk}, and implement the generator method. The pattern was validated against~\cite{lamport1994latex} and~\cite{commonmark2021spec}.
+
+\end{quote}
+
+
+\noindent\rule{\linewidth}{0.4pt}
+
+\section{Evaluation}
+
+\subsection{Feature Comparison}
+
+Table~\ref{tab:tab_comparison} compares MarkTeX against existing tools.
+
+\begin{table}[ht]
+\centering
+\caption{Feature comparison of Markdown-to-LaTeX tools. Based on criteria from~\cite{knuth1986texbook} and~\cite{lamport1994latex}.}
+\begin{tabular}{lcccr}
+\toprule
+Tool & Typed AST & Extensions & Cross-refs & Speed \\
+\midrule
+MarkTeX & yes & yes & yes & 12 ms \\
+pandoc & yes & yes & partial & 85 ms \\
+markdown & no & no & no & 3 ms \\
+kramdown & partial & limited & no & 22 ms \\
+\bottomrule
+\end{tabular}
+\label{tab:tab\_comparison}
+\end{table}
+
+\subsection{Performance}
+
+Table~\ref{tab:tab_performance} reports processing times on a corpus of 1 000 documents.
+
+\begin{table}[h]
+\centering
+\caption{Processing time by document size (adapted from~\cite{knuth1986texbook}). See Figure~\ref{fig:fig_pipeline} for pipeline details.}
+\begin{tabular}{cccr}
+\toprule
+Input size & Parse time & Generate time & Total \\
+\midrule
+1 KB & 0.5 ms & 0.2 ms & 0.7 ms \\
+10 KB & 4.2 ms & 1.8 ms & 6.0 ms \\
+100 KB & 38 ms & 15 ms & 53 ms \\
+\bottomrule
+\end{tabular}
+\label{tab:tab\_performance}
+\end{table}
+
+
+\noindent\rule{\linewidth}{0.4pt}
+
+\section{Implementation}
+
+\subsection{Code Example}
+
+The public API consists of three functions:
+
+\begin{lstlisting}[language=go]
+// Parse Markdown with all extensions enabled.
+doc := parser.Parse(src, parser.ExtAll)
+
+// Generate LaTeX fragment output.
+err := generator.Generate(doc, generator.Options{}, os.Stdout)
+
+// Or use the high-level transpiler.
+out, err := transpiler.TranspileString(src, transpiler.Options{
+    Standalone: true,
+    Extensions: transpiler.ExtAll,
+})
+\end{lstlisting}
+
+For standalone documents, \texttt{MakeTitlePage} and \texttt{MakeTOC} entries in the definition block automatically place \texttt{\textbackslash{}maketitle} and \texttt{\textbackslash{}tableofcontents} at the start of the body.
+
+An indented example showing raw AST traversal:
+
+\begin{verbatim}
+doc := parser.Parse([]byte("# Hello"), 0)
+visitor.Walk(doc, myVisitor)
+\end{verbatim}
+
+\subsection{Special Characters}
+
+LaTeX special characters in Markdown source are automatically escaped. For example, a 50\% discount on the price of \$10.00 \& free shipping becomes \texttt{50\textbackslash{}\% discount on the price of \textbackslash{}\$10.00 \textbackslash{}\& free shipping} in the output. The \texttt{\_} in identifiers like \texttt{my\_variable} is escaped to \texttt{my\textbackslash{}\_variable}.
+
+
+\noindent\rule{\linewidth}{0.4pt}
+
+\section{Conclusion}
+
+As demonstrated by Figures~\ref{fig:fig_pipeline} and~\ref{fig:fig_ast} and Tables~\ref{tab:tab_comparison} and~\ref{tab:tab_performance}, MarkTeX~\cite{gruber2004markdown} achieves competitive performance with a clean, extensible design. The five-step extension pattern~\cite{commonmark2021spec} ensures that new constructs can be added without modifying existing code.
+
+Future work will address the CommonMark delimiter-stack algorithm~\cite{commonmark2021spec} for fully compliant emphasis parsing.
+
+
+\noindent\rule{\linewidth}{0.4pt}
+
+See~\cite{knuth1986texbook},~\cite{lamport1994latex},~\cite{gruber2004markdown}, and~\cite{commonmark2021spec} for full bibliographic details.
+
