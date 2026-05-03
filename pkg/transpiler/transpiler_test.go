@@ -521,3 +521,97 @@ func TestTableFloatExactUserExample(t *testing.T) {
 		}
 	}
 }
+
+// ── Integration: mixed definition blocks and cross-extension combinations ────
+
+// TestMixedDefinitionBlock verifies that C#, F#, and T# entries can coexist
+// in a single ---…--- block.
+func TestMixedDefinitionBlock(t *testing.T) {
+	src := "---\n" +
+		"C#01:doe2023\n" +
+		"F#01:figarch\n" +
+		"T#01:tabresults\n" +
+		"---\n\n" +
+		"See [C#01] and Figure [F#01] and Table [T#01]."
+
+	got, err := transpiler.TranspileString(src, transpiler.Options{Extensions: transpiler.ExtAll})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{"C#01", "F#01", "T#01", `\noindent\rule`} {
+		if strings.Contains(got, bad) {
+			t.Errorf("definition block leaked or became thematic break; found %q\ngot:\n%s", bad, got)
+		}
+	}
+	for _, want := range []string{`~\cite{doe2023}`, `~\ref{fig:figarch}`, `~\ref{tab:tabresults}`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q\ngot:\n%s", want, got)
+		}
+	}
+}
+
+// TestAllRefTypesInOneParagraph ensures all three ref types resolve in one sentence.
+func TestAllRefTypesInOneParagraph(t *testing.T) {
+	src := "---\nC#01:smith2024\nF#01:fig_overview\nT#01:tab_summary\n---\n\n" +
+		"As shown by [C#01], see Figure [F#01] and Table [T#01] for details."
+	got, err := transpiler.TranspileString(src, transpiler.Options{Extensions: transpiler.ExtAll})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `As shown by~\cite{smith2024}, see Figure~\ref{fig:fig_overview} and Table~\ref{tab:tab_summary} for details.`
+	if !strings.Contains(got, want) {
+		t.Errorf("expected %q\ngot:\n%s", want, got)
+	}
+}
+
+// TestCitationInFigureCaption verifies [C#key] resolves inside a figure caption.
+func TestCitationInFigureCaption(t *testing.T) {
+	src := "---\nC#01:doe2023\nF#01:fig1\n---\n\n" +
+		"![F#01:0.8:h][Architecture from [C#01].](figures/arch.png)"
+	got, err := transpiler.TranspileString(src, transpiler.Options{Extensions: transpiler.ExtAll})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `\caption{Architecture from~\cite{doe2023}.}`) {
+		t.Errorf("citation not resolved inside figure caption\ngot:\n%s", got)
+	}
+}
+
+// TestCitationInTableCaption verifies [C#key] resolves inside a table caption.
+func TestCitationInTableCaption(t *testing.T) {
+	src := "---\nC#01:smith2024\nT#01:tab1\n---\n\n" +
+		"|- T#01:ht -|\n|- Results from [C#01]. -|\n| A | B |\n|---|---|\n| 1 | 2 |"
+	got, err := transpiler.TranspileString(src, transpiler.Options{Extensions: transpiler.ExtAll})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `\caption{Results from~\cite{smith2024}.}`) {
+		t.Errorf("citation not resolved inside table caption\ngot:\n%s", got)
+	}
+}
+
+// TestFigureRefInTableCaption verifies [F#key] resolves inside a table caption.
+func TestFigureRefInTableCaption(t *testing.T) {
+	src := "---\nF#01:fig_overview\nT#01:tab1\n---\n\n" +
+		"|- T#01:h -|\n|- Corresponds to Figure [F#01]. -|\n| A |\n|---|\n| 1 |"
+	got, err := transpiler.TranspileString(src, transpiler.Options{Extensions: transpiler.ExtAll})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `\caption{Corresponds to Figure~\ref{fig:fig_overview}.}`) {
+		t.Errorf("figure ref not resolved inside table caption\ngot:\n%s", got)
+	}
+}
+
+// TestMixedBlockDoesNotBreakThematicBreak ensures a plain --- still renders as
+// a thematic break even when all extensions are active.
+func TestMixedBlockDoesNotBreakThematicBreak(t *testing.T) {
+	src := "Before.\n\n---\n\nAfter."
+	got, err := transpiler.TranspileString(src, transpiler.Options{Extensions: transpiler.ExtAll})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `\noindent\rule`) {
+		t.Errorf("plain --- should still produce a thematic break\ngot:\n%s", got)
+	}
+}

@@ -74,6 +74,15 @@ func Generate(doc *ast.Document, opts Options, w io.Writer) error {
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
+// renderInlineNodes walks a slice of inline AST nodes through the generator,
+// emitting their LaTeX directly into the output buffer. Used for captions so
+// that inline refs ([C#01], [F#01], [T#01]) resolve correctly inside \caption{}.
+func (g *Generator) renderInlineNodes(nodes []ast.Node) {
+	for _, n := range nodes {
+		visitor.Walk(n, g)
+	}
+}
+
 func (g *Generator) write(s string)         { g.buf.WriteString(s) }
 func (g *Generator) writef(f string, a ...interface{}) { fmt.Fprintf(&g.buf, f, a...) }
 func (g *Generator) nl()                    { g.buf.WriteByte('\n') }
@@ -419,6 +428,11 @@ func (g *Generator) EnterCitationBlock(_ *ast.CitationBlock) visitor.WalkAction 
 
 // ─── Table-float extension ────────────────────────────────────────────────────
 
+// EnterDefinitionBlock produces no output: it is metadata only.
+func (g *Generator) EnterDefinitionBlock(_ *ast.DefinitionBlock) visitor.WalkAction {
+	return visitor.WalkSkipChildren
+}
+
 // EnterTableDef produces no output: it is metadata only.
 func (g *Generator) EnterTableDef(_ *ast.TableDef) visitor.WalkAction {
 	return visitor.WalkSkipChildren
@@ -431,8 +445,10 @@ func (g *Generator) EnterTableBlock(n *ast.TableBlock) visitor.WalkAction {
 	g.inTableFloat = true
 	g.writef("\\begin{table}[%s]\n", n.Placement)
 	g.write("\\centering\n")
-	if n.Caption != "" {
-		g.writef("\\caption{%s}\n", escapeText(n.Caption))
+	if len(n.CaptionNodes) > 0 {
+		g.write("\\caption{")
+		g.renderInlineNodes(n.CaptionNodes)
+		g.write("}\n")
 	}
 	return visitor.WalkContinue
 }
@@ -482,7 +498,11 @@ func (g *Generator) EnterFigureImage(n *ast.FigureImage) visitor.WalkAction {
 	g.writef("\\begin{figure}[%s]\n", n.Placement)
 	g.write("  \\centering\n")
 	g.writef("  \\includegraphics[width=%s\\linewidth]{%s}\n", n.Width, escapeText(n.Path))
-	g.writef("  \\caption{%s}\n", escapeText(n.Caption))
+	if len(n.CaptionNodes) > 0 {
+		g.write("  \\caption{")
+		g.renderInlineNodes(n.CaptionNodes)
+		g.write("}\n")
+	}
 	g.writef("  \\label{fig:%s}\n", escapeText(n.LabelKey))
 	g.write("\\end{figure}")
 	return visitor.WalkSkipChildren

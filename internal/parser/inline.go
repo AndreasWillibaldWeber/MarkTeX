@@ -612,20 +612,18 @@ func (p *inlineParser) parseFigureImage() ([]ast.Node, bool) {
 		return nil, false
 	}
 	p.pos++ // consume '['
-	capStart := p.pos
-	for p.pos < len(p.src) && p.src[p.pos] != ']' && p.src[p.pos] != '\n' {
-		p.pos++
-	}
-	if p.pos >= len(p.src) || p.src[p.pos] != ']' {
+	// parseCaptionContent calls parseOne() for all characters so [C#01], [F#01],
+	// etc. are dispatched to the citation/figure/table ref parsers rather than
+	// being depth-counted as bracket pairs (which parseInlineContent does).
+	captionNodes, ok2 := p.parseCaptionContent()
+	if !ok2 {
 		p.pos = save
 		return nil, false
 	}
-	caption := p.src[capStart:p.pos]
-	p.pos++ // consume ']'
 
 	// Parenthesised path
-	dest, _, ok2 := p.parseLinkDestinationAndTitle()
-	if !ok2 {
+	dest, _, ok3 := p.parseLinkDestinationAndTitle()
+	if !ok3 {
 		p.pos = save
 		return nil, false
 	}
@@ -637,7 +635,7 @@ func (p *inlineParser) parseFigureImage() ([]ast.Node, bool) {
 	}
 
 	nodePos := p.posAt(save)
-	return []ast.Node{ast.NewFigureImage(nodePos, key, labelKey, width, placement, caption, dest)}, true
+	return []ast.Node{ast.NewFigureImage(nodePos, key, labelKey, width, placement, captionNodes, dest)}, true
 }
 
 // parseFigureMeta parses the `F#key:width:placement` string from the first
@@ -671,6 +669,32 @@ func parseFigureMeta(s string) (key, width, placement string, ok bool) {
 		}
 	}
 	return k, w, pl, true
+}
+
+// parseCaptionContent parses inline content until the first unmatched `]`.
+// Unlike parseInlineContent it does NOT depth-count `[` — instead it calls
+// parseOne() for every character including `[`, so citation refs ([C#key]),
+// figure refs ([F#key]), and table refs ([T#key]) inside caption text are
+// dispatched to their respective parsers and resolve correctly.
+//
+// The trade-off: a literal `]` that is not part of a known ref or link will
+// terminate the caption early. Authors can escape it as `\]`.
+func (p *inlineParser) parseCaptionContent() ([]ast.Node, bool) {
+	save := p.pos
+	var nodes []ast.Node
+	for p.pos < len(p.src) {
+		if p.src[p.pos] == ']' {
+			p.pos++ // consume caption-closing ']'
+			return mergeTextNodes(nodes), true
+		}
+		if p.src[p.pos] == '\n' {
+			break // captions do not span lines
+		}
+		more := p.parseOne()
+		nodes = append(nodes, more...)
+	}
+	p.pos = save
+	return nil, false
 }
 
 // parseTableRef handles `[T#key]` inline table cross-references → ~\ref{tab:label}.

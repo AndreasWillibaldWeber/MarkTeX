@@ -92,5 +92,7 @@ func (BaseVisitor) EnterTableDef(_ *ast.TableDef) WalkAction           { return 
 func (BaseVisitor) LeaveTableDef(_ *ast.TableDef) WalkAction           { return WalkContinue }
 func (BaseVisitor) EnterTableBlock(_ *ast.TableBlock) WalkAction       { return WalkContinue }
 func (BaseVisitor) LeaveTableBlock(_ *ast.TableBlock) WalkAction       { return WalkContinue }
-func (BaseVisitor) EnterTableRef(_ *ast.TableRef) WalkAction           { return WalkContinue }
-func (BaseVisitor) LeaveTableRef(_ *ast.TableRef) WalkAction           { return WalkContinue }
+func (BaseVisitor) EnterTableRef(_ *ast.TableRef) WalkAction               { return WalkContinue }
+func (BaseVisitor) LeaveTableRef(_ *ast.TableRef) WalkAction               { return WalkContinue }
+func (BaseVisitor) EnterDefinitionBlock(_ *ast.DefinitionBlock) WalkAction { return WalkContinue }
+func (BaseVisitor) LeaveDefinitionBlock(_ *ast.DefinitionBlock) WalkAction { return WalkContinue }
