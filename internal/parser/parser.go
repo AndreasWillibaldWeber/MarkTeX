@@ -27,8 +27,9 @@ package parser
 
 import (
 	"bytes"
-	"marktex/internal/ast"
 	"strings"
+
+	"github.com/andreaswillibaldweber/marktex/internal/ast"
 )
 
 // Extensions is a bitmask of optional Markdown extensions to enable.
@@ -49,9 +50,13 @@ const (
 	// ExtTableFloat enables table-float blocks (|- T#key:placement -| rows) and
 	// [T#key] cross-references that resolve to \ref{tab:label}.
 	ExtTableFloat
+	// ExtDocumentMeta enables document-metadata entries inside definition blocks:
+	//   Author, Title, Subtitle, Date, MakeTitlePage, MakeTOC, MakeLOF, MakeLOT, MakeLOL.
+	// Only applied when the generator runs in standalone mode.
+	ExtDocumentMeta
 
 	// ExtAll enables all available extensions.
-	ExtAll = ExtTables | ExtStrikethrough | ExtAutolinks | ExtCitations | ExtFigures | ExtTableFloat
+	ExtAll = ExtTables | ExtStrikethrough | ExtAutolinks | ExtCitations | ExtFigures | ExtTableFloat | ExtDocumentMeta
 )
 
 // Has reports whether ext includes the given extension flag.
@@ -63,6 +68,7 @@ type defRefs struct {
 	citations map[string]string // C# keys → BibTeX identifiers
 	figures   map[string]string // F# keys → LaTeX label suffixes
 	tables    map[string]string // T# keys → LaTeX label suffixes
+	meta      ast.DocumentMeta  // document metadata (standalone mode only)
 }
 
 // Parse converts Markdown source bytes into an AST Document.
@@ -87,7 +93,7 @@ func preScan(src []byte, ext Extensions) defRefs {
 		figures:   make(map[string]string),
 		tables:    make(map[string]string),
 	}
-	if !ext.Has(ExtCitations) && !ext.Has(ExtFigures) && !ext.Has(ExtTableFloat) {
+	if !ext.Has(ExtCitations) && !ext.Has(ExtFigures) && !ext.Has(ExtTableFloat) && !ext.Has(ExtDocumentMeta) {
 		return refs
 	}
 
@@ -102,6 +108,7 @@ func preScan(src []byte, ext Extensions) defRefs {
 		citCollected := map[string]string{}
 		figCollected := map[string]string{}
 		tabCollected := map[string]string{}
+		var metaCollected ast.DocumentMeta
 		closingFound := false
 		valid := true
 
@@ -131,12 +138,20 @@ func preScan(src []byte, ext Extensions) defRefs {
 					continue
 				}
 			}
+			if ext.Has(ExtDocumentMeta) {
+				if ok := parseDocumentMetaEntry(lines[j], &metaCollected); ok {
+					j++
+					continue
+				}
+			}
 			// Line matches no known entry type → not a definition block
 			valid = false
 			break
 		}
 
-		if closingFound && valid && (len(citCollected) > 0 || len(figCollected) > 0 || len(tabCollected) > 0) {
+		hasEntries := len(citCollected) > 0 || len(figCollected) > 0 ||
+			len(tabCollected) > 0 || metaCollected != (ast.DocumentMeta{})
+		if closingFound && valid && hasEntries {
 			for k, v := range citCollected {
 				refs.citations[k] = v
 			}
@@ -146,6 +161,7 @@ func preScan(src []byte, ext Extensions) defRefs {
 			for k, v := range tabCollected {
 				refs.tables[k] = v
 			}
+			refs.meta.Merge(metaCollected)
 			i = j + 1
 		} else {
 			i++
@@ -214,6 +230,64 @@ func parseTableEntryBytes(line []byte) (key, label string, ok bool) {
 		return "", "", false
 	}
 	return k, v, true
+}
+
+// parseDocumentMetaEntry attempts to parse a document-metadata line and writes
+// the result into meta. It handles both key-value pairs (`Author: Name`) and
+// boolean flags (`MakeTOC`). Returns true when the line was recognised.
+//
+// Key matching is case-insensitive. The supported keys and flags are:
+//
+//	Author, Title, Subtitle, Date
+//	MakeTitlePage, MakeTOC, MakeLOF, MakeLOT, MakeLOL
+func parseDocumentMetaEntry(line []byte, meta *ast.DocumentMeta) (ok bool) {
+	s := strings.TrimSpace(string(line))
+	if s == "" {
+		return false
+	}
+
+	// Boolean flags (no colon)
+	switch strings.ToLower(s) {
+	case "maketitlepage":
+		meta.MakeTitlePage = true
+		return true
+	case "maketoc":
+		meta.MakeTOC = true
+		return true
+	case "makelof":
+		meta.MakeLOF = true
+		return true
+	case "makelot":
+		meta.MakeLOT = true
+		return true
+	case "makelol":
+		meta.MakeLOL = true
+		return true
+	}
+
+	// Key: value pairs
+	idx := strings.IndexByte(s, ':')
+	if idx < 1 {
+		return false
+	}
+	k := strings.TrimSpace(strings.ToLower(s[:idx]))
+	v := strings.TrimSpace(s[idx+1:])
+	if v == "" {
+		return false
+	}
+	switch k {
+	case "author":
+		meta.Author = v
+	case "title":
+		meta.Title = v
+	case "subtitle":
+		meta.Subtitle = v
+	case "date":
+		meta.Date = v
+	default:
+		return false
+	}
+	return true
 }
 
 // preScanCitations is kept for any callers that still use the old API.

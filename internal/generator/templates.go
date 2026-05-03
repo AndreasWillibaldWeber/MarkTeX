@@ -5,9 +5,26 @@ package generator
 
 import "strings"
 
-// standalonePreamble returns the LaTeX preamble for a complete standalone
-// document. Only packages that are actually needed (tracked by flags on the
-// Generator) are included to keep the output lean.
+// preambleOpts records which packages the document needs and carries optional
+// document-metadata strings used in standalone mode.
+type preambleOpts struct {
+	// Package flags — only include packages actually used by the content.
+	needsListings bool
+	needsEnumitem bool
+	needsUlem     bool
+	needsGraphicx bool
+	needsBooktabs bool
+
+	// Document metadata (standalone mode only).
+	author   string
+	title    string
+	subtitle string // appended to \title as \\[0.5em]{\large …}
+	date     string // empty → LaTeX default (\today)
+}
+
+// standalonePreamble returns a complete LaTeX preamble up to and including
+// \begin{document}. Only packages that are actually needed are included.
+// Document-metadata commands (\author, \title, \date) are emitted when set.
 func standalonePreamble(opts preambleOpts) string {
 	b := &strings.Builder{}
 
@@ -70,6 +87,23 @@ func standalonePreamble(opts preambleOpts) string {
 `)
 	}
 
+	// Document-metadata commands go in the preamble (before \begin{document}).
+	if opts.title != "" {
+		b.WriteString("\n% ── Document metadata ────────────────────────────────────────────────────────\n")
+		if opts.subtitle != "" {
+			b.WriteString(`\title{` + escapeText(opts.title) +
+				`\\[0.5em]{\normalfont\large ` + escapeText(opts.subtitle) + `}}` + "\n")
+		} else {
+			b.WriteString(`\title{` + escapeText(opts.title) + "}\n")
+		}
+	}
+	if opts.author != "" {
+		b.WriteString(`\author{` + escapeText(opts.author) + "}\n")
+	}
+	if opts.date != "" {
+		b.WriteString(`\date{` + escapeText(opts.date) + "}\n")
+	}
+
 	b.WriteString(`
 \begin{document}
 `)
@@ -79,13 +113,3 @@ func standalonePreamble(opts preambleOpts) string {
 const standalonePostamble = `
 \end{document}
 `
-
-// preambleOpts records which packages the document actually needs so that
-// unused packages are not emitted.
-type preambleOpts struct {
-	needsListings bool
-	needsEnumitem bool
-	needsUlem     bool
-	needsGraphicx bool
-	needsBooktabs bool
-}

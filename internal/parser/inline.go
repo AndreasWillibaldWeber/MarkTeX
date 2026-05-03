@@ -4,10 +4,11 @@
 package parser
 
 import (
-	"marktex/internal/ast"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/andreaswillibaldweber/marktex/internal/ast"
 )
 
 // parseInline converts a raw text string (a paragraph's collected lines) into a
@@ -114,7 +115,7 @@ func (p *inlineParser) parseEscape() []ast.Node {
 	return []ast.Node{ast.NewText(nodePos, string([]byte{'\\', next}))}
 }
 
-// parseCodeSpan handles `` `code` `` and ``` ``code`` ```.
+// parseCodeSpan handles “ `code` “ and ``` “code“ ```.
 func (p *inlineParser) parseCodeSpan() []ast.Node {
 	nodePos := p.posAt(p.pos)
 	// Count opening backticks

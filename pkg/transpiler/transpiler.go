@@ -6,8 +6,9 @@ package transpiler
 import (
 	"bytes"
 	"io"
-	"marktex/internal/generator"
-	"marktex/internal/parser"
+
+	"github.com/andreaswillibaldweber/marktex/internal/generator"
+	"github.com/andreaswillibaldweber/marktex/internal/parser"
 )
 
 // Transpiler combines the parser and LaTeX generator. Create one with New and

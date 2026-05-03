@@ -24,9 +24,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"marktex/pkg/transpiler"
 	"os"
 	"strings"
+
+	"github.com/andreaswillibaldweber/marktex/pkg/transpiler"
 )
 
 const version = "0.1.0"

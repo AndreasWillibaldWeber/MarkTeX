@@ -3,7 +3,7 @@
 
 package visitor
 
-import "marktex/internal/ast"
+import "github.com/andreaswillibaldweber/marktex/internal/ast"
 
 // Walk traverses the AST rooted at n in depth-first order, calling the
 // appropriate Enter and Leave methods on v for each node.

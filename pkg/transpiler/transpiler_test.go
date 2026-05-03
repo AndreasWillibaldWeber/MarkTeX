@@ -4,9 +4,10 @@
 package transpiler_test
 
 import (
-	"marktex/pkg/transpiler"
 	"strings"
 	"testing"
+
+	"github.com/andreaswillibaldweber/marktex/pkg/transpiler"
 )
 
 func TestHeadings(t *testing.T) {
@@ -325,7 +326,7 @@ func TestFigureImageFull(t *testing.T) {
 func TestFigureImagePlacementVariants(t *testing.T) {
 	cases := []struct{ placement, src string }{
 		{"ht!", "---\nF#01:l\n---\n\n![F#01:0.5:ht!][Cap.](a.png)"},
-		{"hb",  "---\nF#01:l\n---\n\n![F#01:0.8:hb][Cap.](a.png)"},
+		{"hb", "---\nF#01:l\n---\n\n![F#01:0.8:hb][Cap.](a.png)"},
 	}
 	for _, tc := range cases {
 		got, err := transpiler.TranspileString(tc.src, transpiler.Options{Extensions: transpiler.ExtFigures})
@@ -613,5 +614,124 @@ func TestMixedBlockDoesNotBreakThematicBreak(t *testing.T) {
 	}
 	if !strings.Contains(got, `\noindent\rule`) {
 		t.Errorf("plain --- should still produce a thematic break\ngot:\n%s", got)
+	}
+}
+
+// ── Document metadata extension ───────────────────────────────────────────────
+
+func TestDocumentMetaFragmentModeIgnored(t *testing.T) {
+	src := "---\nAuthor: Ada Lovelace\nTitle: My Doc\nMakeTitlePage\nMakeTOC\n---\n\n# Hello"
+	got, err := transpiler.TranspileString(src, transpiler.Options{
+		Extensions: transpiler.ExtDocumentMeta,
+		Standalone: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{`\documentclass`, `\author`, `\title`, `\maketitle`, `\tableofcontents`} {
+		if strings.Contains(got, bad) {
+			t.Errorf("metadata command %q must not appear in fragment mode\ngot:\n%s", bad, got)
+		}
+	}
+}
+
+func TestDocumentMetaTitleAuthorDate(t *testing.T) {
+	src := "---\nTitle: My Document\nAuthor: Ada Lovelace\nDate: 2025-01-01\n---\n\n# Hello"
+	got, err := transpiler.TranspileString(src, transpiler.Options{
+		Extensions: transpiler.ExtDocumentMeta,
+		Standalone: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`\title{My Document}`,
+		`\author{Ada Lovelace}`,
+		`\date{2025-01-01}`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q\ngot:\n%s", want, got)
+		}
+	}
+}
+
+func TestDocumentMetaSubtitle(t *testing.T) {
+	src := "---\nTitle: Main\nSubtitle: Secondary\n---\n\n# Hello"
+	got, err := transpiler.TranspileString(src, transpiler.Options{
+		Extensions: transpiler.ExtDocumentMeta,
+		Standalone: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `\title{Main\\[0.5em]{\normalfont\large Secondary}}`) {
+		t.Errorf("subtitle not encoded in \\title\ngot:\n%s", got)
+	}
+}
+
+func TestDocumentMetaFrontMatterOrder(t *testing.T) {
+	src := "---\nTitle: T\nMakeLOL\nMakeLOT\nMakeLOF\nMakeTOC\nMakeTitlePage\n---\n\n# Body"
+	got, err := transpiler.TranspileString(src, transpiler.Options{
+		Extensions: transpiler.ExtDocumentMeta,
+		Standalone: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands := []string{`\maketitle`, `\tableofcontents`, `\listoffigures`, `\listoftables`, `\lstlistoflistings`}
+	prev := 0
+	for _, cmd := range commands {
+		pos := strings.Index(got, cmd)
+		if pos < 0 {
+			t.Errorf("missing %q\ngot:\n%s", cmd, got)
+			continue
+		}
+		if pos < prev {
+			t.Errorf("command order wrong: %q appeared before previous command\ngot:\n%s", cmd, got)
+		}
+		prev = pos
+	}
+}
+
+func TestDocumentMetaMakeLOLAddsListings(t *testing.T) {
+	// MakeLOL must trigger inclusion of the listings package even when no
+	// code block is present in the document.
+	src := "---\nMakeLOL\n---\n\n# Hello"
+	got, err := transpiler.TranspileString(src, transpiler.Options{
+		Extensions: transpiler.ExtDocumentMeta,
+		Standalone: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `\usepackage{listings}`) {
+		t.Errorf("\\usepackage{listings} missing when MakeLOL is set\ngot:\n%s", got)
+	}
+	if !strings.Contains(got, `\lstlistoflistings`) {
+		t.Errorf("\\lstlistoflistings missing\ngot:\n%s", got)
+	}
+}
+
+func TestDocumentMetaMixedWithRefs(t *testing.T) {
+	src := "---\nAuthor: Ada\nTitle: Doc\nMakeTitlePage\nC#01:doe2023\nF#01:fig1\nT#01:tab1\n---\n\n" +
+		"See [C#01], Figure [F#01], Table [T#01]."
+	got, err := transpiler.TranspileString(src, transpiler.Options{
+		Extensions: transpiler.ExtAll,
+		Standalone: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`\author{Ada}`,
+		`\title{Doc}`,
+		`\maketitle`,
+		`~\cite{doe2023}`,
+		`~\ref{fig:fig1}`,
+		`~\ref{tab:tab1}`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q\ngot:\n%s", want, got)
+		}
 	}
 }
