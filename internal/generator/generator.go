@@ -6,9 +6,10 @@ package generator
 import (
 	"fmt"
 	"io"
-	"marktex/internal/ast"
-	"marktex/internal/visitor"
 	"strings"
+
+	"github.com/andreaswillibaldweber/marktex/internal/ast"
+	"github.com/andreaswillibaldweber/marktex/internal/visitor"
 )
 
 // Options configures LaTeX output.
@@ -47,6 +48,10 @@ type Generator struct {
 	// so that the TableBlock handler can place \label before \end{table}.
 	inTableFloat bool
 
+	// docMeta accumulates document metadata from every DefinitionBlock visited.
+	// It is only applied when opts.Standalone is true.
+	docMeta ast.DocumentMeta
+
 	// listStack tracks the nesting depth of lists for indentation
 	listStack []listFrame
 }
@@ -83,9 +88,9 @@ func (g *Generator) renderInlineNodes(nodes []ast.Node) {
 	}
 }
 
-func (g *Generator) write(s string)         { g.buf.WriteString(s) }
+func (g *Generator) write(s string)                    { g.buf.WriteString(s) }
 func (g *Generator) writef(f string, a ...interface{}) { fmt.Fprintf(&g.buf, f, a...) }
-func (g *Generator) nl()                    { g.buf.WriteByte('\n') }
+func (g *Generator) nl()                               { g.buf.WriteByte('\n') }
 
 // ─── Document ─────────────────────────────────────────────────────────────────
 
@@ -99,7 +104,37 @@ func (g *Generator) LeaveDocument(_ *ast.Document) visitor.WalkAction {
 	if g.opts.Standalone {
 		body := g.buf.String()
 		g.buf.Reset()
+
+		// Transfer document metadata into preamble opts so standalonePreamble
+		// can emit \title, \author, \date in the correct location.
+		g.po.title = g.docMeta.Title
+		g.po.subtitle = g.docMeta.Subtitle
+		g.po.author = g.docMeta.Author
+		g.po.date = g.docMeta.Date
+		if g.docMeta.MakeLOL {
+			g.po.needsListings = true // \lstlistoflistings requires listings
+		}
+
 		g.write(standalonePreamble(g.po))
+
+		// Front-matter commands go at the very start of the body, in a
+		// fixed typographic order.
+		if g.docMeta.MakeTitlePage {
+			g.write("\\maketitle\n\n")
+		}
+		if g.docMeta.MakeTOC {
+			g.write("\\tableofcontents\n\n")
+		}
+		if g.docMeta.MakeLOF {
+			g.write("\\listoffigures\n\n")
+		}
+		if g.docMeta.MakeLOT {
+			g.write("\\listoftables\n\n")
+		}
+		if g.docMeta.MakeLOL {
+			g.write("\\lstlistoflistings\n\n")
+		}
+
 		g.write(body)
 		g.write(standalonePostamble)
 	}
@@ -109,13 +144,13 @@ func (g *Generator) LeaveDocument(_ *ast.Document) visitor.WalkAction {
 // ─── Headings ─────────────────────────────────────────────────────────────────
 
 var headingCommands = [7]string{
-	0:  "",
-	1:  `\section`,
-	2:  `\subsection`,
-	3:  `\subsubsection`,
-	4:  `\paragraph`,
-	5:  `\subparagraph`,
-	6:  `\textbf`, // no standard level-6 in LaTeX
+	0: "",
+	1: `\section`,
+	2: `\subsection`,
+	3: `\subsubsection`,
+	4: `\paragraph`,
+	5: `\subparagraph`,
+	6: `\textbf`, // no standard level-6 in LaTeX
 }
 
 func (g *Generator) EnterHeading(n *ast.Heading) visitor.WalkAction {
@@ -428,8 +463,10 @@ func (g *Generator) EnterCitationBlock(_ *ast.CitationBlock) visitor.WalkAction 
 
 // ─── Table-float extension ────────────────────────────────────────────────────
 
-// EnterDefinitionBlock produces no output: it is metadata only.
-func (g *Generator) EnterDefinitionBlock(_ *ast.DefinitionBlock) visitor.WalkAction {
+// EnterDefinitionBlock collects document metadata for standalone mode.
+// It produces no content output; the metadata is applied in LeaveDocument.
+func (g *Generator) EnterDefinitionBlock(n *ast.DefinitionBlock) visitor.WalkAction {
+	g.docMeta.Merge(n.Meta)
 	return visitor.WalkSkipChildren
 }
 

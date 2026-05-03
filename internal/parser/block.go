@@ -5,8 +5,9 @@ package parser
 
 import (
 	"bytes"
-	"marktex/internal/ast"
 	"strings"
+
+	"github.com/andreaswillibaldweber/marktex/internal/ast"
 )
 
 // blockParser builds the block-level AST from a stream of lines.
@@ -82,9 +83,9 @@ func (p *blockParser) parse() *ast.Document {
 		indentedLines []string // accumulating indented code lines
 		indentedPos   ast.Pos
 
-		bqLines  []string // accumulated blockquote inner lines
-		bqOpen   bool
-		bqPos    ast.Pos
+		bqLines []string // accumulated blockquote inner lines
+		bqOpen  bool
+		bqPos   ast.Pos
 
 		blankCount int // consecutive blank lines
 	)
@@ -850,10 +851,18 @@ func (p *blockParser) isAnyDefinitionEntry(content []byte) bool {
 			return true
 		}
 	}
+	if p.ext.Has(ExtDocumentMeta) {
+		var dummy ast.DocumentMeta
+		if parseDocumentMetaEntry(content, &dummy) {
+			return true
+		}
+	}
 	return false
 }
 
-// parseDefinitionBlock reads any mix of C#, F#, and T# entries until the
+// parseDefinitionBlock reads any mix of C#, F#, T# entries and document-meta
+// lines until the closing `---` and returns a DefinitionBlock node. A line that
+// matches none of the enabled entry types causes the block to be rejected.
 // closing `---` and returns a DefinitionBlock node. A line that matches none
 // of the enabled entry types causes the block to be rejected (the opening
 // `---` will fall through to thematic-break handling).
@@ -861,6 +870,7 @@ func (p *blockParser) parseDefinitionBlock(pos ast.Pos) (*ast.DefinitionBlock, b
 	citations := make(map[string]string)
 	figures := make(map[string]string)
 	tables := make(map[string]string)
+	var meta ast.DocumentMeta
 
 	for {
 		l := p.scanner.next()
@@ -888,12 +898,19 @@ func (p *blockParser) parseDefinitionBlock(pos ast.Pos) (*ast.DefinitionBlock, b
 				continue
 			}
 		}
+		if p.ext.Has(ExtDocumentMeta) {
+			if ok := parseDocumentMetaEntry(l.content, &meta); ok {
+				continue
+			}
+		}
 		// Unrecognised line — not a valid definition block
 		return nil, false
 	}
 
-	if len(citations)+len(figures)+len(tables) == 0 {
+	hasRefs := len(citations)+len(figures)+len(tables) > 0
+	hasMeta := meta != (ast.DocumentMeta{})
+	if !hasRefs && !hasMeta {
 		return nil, false
 	}
-	return ast.NewDefinitionBlock(pos, citations, figures, tables), true
+	return ast.NewDefinitionBlock(pos, citations, figures, tables, meta), true
 }

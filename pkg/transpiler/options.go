@@ -5,7 +5,7 @@
 // It combines the parser and generator into a single Transpile call.
 package transpiler
 
-import "marktex/internal/parser"
+import "github.com/andreaswillibaldweber/marktex/internal/parser"
 
 // Extension is a named Markdown extension flag.
 type Extension = parser.Extensions
@@ -52,6 +52,24 @@ const (
 	//
 	//   See Table [T#01].   →   See Table~\ref{tab:mytable}.
 	ExtTableFloat = parser.ExtTableFloat
+
+	// ExtDocumentMeta enables document-metadata entries in definition blocks:
+	//
+	//   ---
+	//   Author: Firstname Surname
+	//   Title: My Document
+	//   Subtitle: A deeper look
+	//   Date: 2025-05-01
+	//   MakeTitlePage
+	//   MakeTOC
+	//   MakeLOF
+	//   MakeLOT
+	//   MakeLOL
+	//   ---
+	//
+	// Metadata is only applied when -standalone is active; silently ignored
+	// in fragment mode.
+	ExtDocumentMeta = parser.ExtDocumentMeta
 
 	// ExtAll enables all available extensions.
 	ExtAll = parser.ExtAll

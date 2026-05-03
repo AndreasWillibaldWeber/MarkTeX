@@ -14,7 +14,7 @@
 //     LaTeX generator) that cares about the new node type.
 package visitor
 
-import "marktex/internal/ast"
+import "github.com/andreaswillibaldweber/marktex/internal/ast"
 
 // WalkAction controls traversal after an Enter or Leave method returns.
 type WalkAction int

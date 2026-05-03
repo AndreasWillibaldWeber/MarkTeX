@@ -3,6 +3,44 @@
 
 package ast
 
+// DocumentMeta holds document-level metadata extracted from a definition block.
+// It is only applied when the generator is run in standalone mode; in fragment
+// mode every field is silently ignored.
+type DocumentMeta struct {
+	Author   string // \author{…}
+	Title    string // \title{…}
+	Subtitle string // appended to \title as \\[0.5em]{\large …}
+	Date     string // \date{…}  — empty means LaTeX uses \today
+
+	MakeTitlePage bool // emit \maketitle after \begin{document}
+	MakeTOC       bool // emit \tableofcontents
+	MakeLOF       bool // emit \listoffigures
+	MakeLOT       bool // emit \listoftables
+	MakeLOL       bool // emit \lstlistoflistings (requires listings package)
+}
+
+// Merge copies non-zero fields from src into dst. Boolean fields are OR-ed;
+// string fields from src overwrite dst only when non-empty.
+func (dst *DocumentMeta) Merge(src DocumentMeta) {
+	if src.Author != "" {
+		dst.Author = src.Author
+	}
+	if src.Title != "" {
+		dst.Title = src.Title
+	}
+	if src.Subtitle != "" {
+		dst.Subtitle = src.Subtitle
+	}
+	if src.Date != "" {
+		dst.Date = src.Date
+	}
+	dst.MakeTitlePage = dst.MakeTitlePage || src.MakeTitlePage
+	dst.MakeTOC = dst.MakeTOC || src.MakeTOC
+	dst.MakeLOF = dst.MakeLOF || src.MakeLOF
+	dst.MakeLOT = dst.MakeLOT || src.MakeLOT
+	dst.MakeLOL = dst.MakeLOL || src.MakeLOL
+}
+
 // Align represents column alignment in a table.
 type Align int
 
@@ -278,14 +316,16 @@ type DefinitionBlock struct {
 	Citations map[string]string // C# key → BibTeX identifier
 	Figures   map[string]string // F# key → label suffix
 	Tables    map[string]string // T# key → label suffix
+	Meta      DocumentMeta      // document metadata (standalone mode only)
 }
 
-func NewDefinitionBlock(pos Pos, citations, figures, tables map[string]string) *DefinitionBlock {
+func NewDefinitionBlock(pos Pos, citations, figures, tables map[string]string, meta DocumentMeta) *DefinitionBlock {
 	return &DefinitionBlock{
 		blockBase: blockBase{pos: pos},
 		Citations: citations,
 		Figures:   figures,
 		Tables:    tables,
+		Meta:      meta,
 	}
 }
 func (d *DefinitionBlock) Type() NodeType { return NodeDefinitionBlock }
