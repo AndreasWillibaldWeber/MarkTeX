@@ -2,6 +2,10 @@
 # test-snippets.sh — transpile every testdata/snippets/*.md and diff the output
 # against the corresponding *.tex golden file.
 #
+# Per-snippet options are read from an optional <name>.opts sidecar file.
+# Each non-empty line is one token:
+#   standalone   — pass -standalone to the binary
+#
 # Usage:
 #   ./scripts/test-snippets.sh            # compare against golden files
 #   ./scripts/test-snippets.sh --update   # regenerate golden files
@@ -18,7 +22,7 @@ for arg in "$@"; do
     --update|-u) UPDATE=true ;;
     --help|-h)
       echo "Usage: $0 [--update]"
-      echo "  --update  Overwrite .tex golden files with current output."
+      echo "  --update  Overwrite .tex golden files with current transpiler output."
       exit 0
       ;;
     *) echo "Unknown flag: $arg" >&2; exit 2 ;;
@@ -34,9 +38,22 @@ fail=0
 for md_file in "$SNIPPET_DIR"/*.md; do
   base="${md_file%.md}"
   tex_file="${base}.tex"
+  opts_file="${base}.opts"
   name="$(basename "$base")"
 
-  actual="$("$BIN" "$md_file")"
+  # Read per-snippet options
+  extra_flags=""
+  if [[ -f "$opts_file" ]]; then
+    while IFS= read -r line; do
+      token="$(echo "$line" | tr '[:upper:]' '[:lower:]' | xargs)"
+      case "$token" in
+        standalone) extra_flags="$extra_flags -standalone" ;;
+      esac
+    done < "$opts_file"
+  fi
+
+  # shellcheck disable=SC2086
+  actual="$("$BIN" $extra_flags "$md_file")"
 
   if $UPDATE; then
     printf '%s\n' "$actual" > "$tex_file"

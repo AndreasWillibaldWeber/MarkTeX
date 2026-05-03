@@ -1,3 +1,42 @@
+\documentclass{article}
+
+% ── Encoding & fonts ─────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+
+% ── Page geometry ─────────────────────────────────────────────────────────────
+\usepackage[a4paper, margin=2.5cm]{geometry}
+
+% ── Hyperlinks ────────────────────────────────────────────────────────────────
+\usepackage[hidelinks, unicode]{hyperref}
+
+% ── Source code listings ─────────────────────────────────────────────────────
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  keepspaces=true,
+  columns=flexible,
+  frame=single,
+  numbers=left,
+  numberstyle=\tiny,
+}
+
+% ── List customisation ───────────────────────────────────────────────────────
+\usepackage{enumitem}
+
+% ── Strikethrough ────────────────────────────────────────────────────────────
+\usepackage[normalem]{ulem}
+
+% ── Graphics ─────────────────────────────────────────────────────────────────
+\usepackage{graphicx}
+
+% ── Tables ───────────────────────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{tabularx}
+
+\begin{document}
 \section{MarkTeX Technical Reference}
 
 \subsection{Overview}
@@ -198,3 +237,5 @@ When \texttt{-standalone} is active, the preamble includes only the packages the
 
 Document metadata (\texttt{Author:}, \texttt{Title:}, etc.) is placed immediately before \texttt{\textbackslash{}begin\{document\}}, and front-matter commands (\texttt{\textbackslash{}maketitle}, \texttt{\textbackslash{}tableofcontents}, etc.) are placed immediately after it.
 
+
+\end{document}
