@@ -1,6 +1,6 @@
 # MarkTeX
 
-A Markdown-to-LaTeX transpiler written in Go. It parses Markdown source into a typed AST and walks that tree to produce LaTeX output. Optional extensions add citations, labeled figures, labeled table floats, and document metadata — all defined in a unified `---…---` definition block.
+A Markdown-to-LaTeX transpiler written in Go. It parses Markdown source with optional extensions like citations, labeled figures, labeled table floats, and document metadata to produce LaTeX source code.
 
 ## License
 
@@ -11,6 +11,19 @@ This project is licensed under LGPL-3.0-or-later. See [`LICENSE`](./LICENSE) for
 The project name, logo, and branding are not licensed for use in a way that suggests a modified version is the official project. Modified versions should use a different name unless written permission is granted. See [`NOTICE`](./NOTICE) for details.
 
 ---
+
+## Install MarkTeX as a command-line tool:
+
+1. Check your Go installation: [https://go.dev/doc/tutorial/compile-install](https://go.dev/doc/tutorial/compile-install)
+    1. Add binary path to $PATH e.g. add to the file `~/.profile` the command `export PATH=$PATH:~/go/bin`
+    2. Set GOBIN path, e.g. with the command `go env -w GOBIN=~/go/bin`
+   
+2. Check repository structure: [https://go.dev/doc/modules/layout](https://go.dev/doc/modules/layout)
+    1. Check the repository for version and release tags. Can be requested by @latest @v1.0.3 suffixes.
+
+```bash
+go install github.com/andreaswillibaldweber/marktex/marktex
+```
 
 ## Build and run
 
