@@ -241,19 +241,19 @@ func (f *FigureBlock) Type() NodeType { return NodeFigureBlock }
 // Children must contain exactly one Table node.
 type TableBlock struct {
 	blockBase
-	Key       string // short key, e.g. "T#01"
-	LabelKey  string // resolved LaTeX label suffix, e.g. "tablelabel01"
-	Placement string // LaTeX float specifier, e.g. "h!", "ht"
-	Caption   string // caption text; may be empty if no |- caption -| row given
+	Key          string // short key, e.g. "T#01"
+	LabelKey     string // resolved LaTeX label suffix, e.g. "tablelabel01"
+	Placement    string // LaTeX float specifier, e.g. "h!", "ht"
+	CaptionNodes []Node // parsed inline nodes; empty when no |- caption -| row given
 }
 
-func NewTableBlock(pos Pos, key, labelKey, placement, caption string) *TableBlock {
+func NewTableBlock(pos Pos, key, labelKey, placement string, captionNodes []Node) *TableBlock {
 	return &TableBlock{
-		blockBase: blockBase{pos: pos},
-		Key:       key,
-		LabelKey:  labelKey,
-		Placement: placement,
-		Caption:   caption,
+		blockBase:    blockBase{pos: pos},
+		Key:          key,
+		LabelKey:     labelKey,
+		Placement:    placement,
+		CaptionNodes: captionNodes,
 	}
 }
 func (t *TableBlock) Type() NodeType { return NodeTableBlock }
@@ -269,3 +269,23 @@ func NewTableDef(pos Pos, refs map[string]string) *TableDef {
 	return &TableDef{blockBase: blockBase{pos: pos}, Refs: refs}
 }
 func (t *TableDef) Type() NodeType { return NodeTableDef }
+
+// DefinitionBlock is the unified form produced when a ---…--- block contains
+// any mix of C#, F#, and T# entries. It replaces the separate CitationBlock,
+// FigureBlock, and TableDef nodes for mixed blocks. It produces no output.
+type DefinitionBlock struct {
+	blockBase
+	Citations map[string]string // C# key → BibTeX identifier
+	Figures   map[string]string // F# key → label suffix
+	Tables    map[string]string // T# key → label suffix
+}
+
+func NewDefinitionBlock(pos Pos, citations, figures, tables map[string]string) *DefinitionBlock {
+	return &DefinitionBlock{
+		blockBase: blockBase{pos: pos},
+		Citations: citations,
+		Figures:   figures,
+		Tables:    tables,
+	}
+}
+func (d *DefinitionBlock) Type() NodeType { return NodeDefinitionBlock }

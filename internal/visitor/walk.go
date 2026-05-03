@@ -105,6 +105,8 @@ func enter(n ast.Node, v Visitor) WalkAction {
 		return v.EnterTableBlock(n.(*ast.TableBlock))
 	case ast.NodeTableRef:
 		return v.EnterTableRef(n.(*ast.TableRef))
+	case ast.NodeDefinitionBlock:
+		return v.EnterDefinitionBlock(n.(*ast.DefinitionBlock))
 	}
 	return WalkContinue
 }
@@ -184,6 +186,8 @@ func leave(n ast.Node, v Visitor) WalkAction {
 		return v.LeaveTableBlock(n.(*ast.TableBlock))
 	case ast.NodeTableRef:
 		return v.LeaveTableRef(n.(*ast.TableRef))
+	case ast.NodeDefinitionBlock:
+		return v.LeaveDefinitionBlock(n.(*ast.DefinitionBlock))
 	}
 	return WalkContinue
 }

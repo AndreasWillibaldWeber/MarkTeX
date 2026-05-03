@@ -47,18 +47,21 @@ const (
 	NodeStrikethrough
 
 	// Citation extension nodes
-	NodeCitationBlock // block: defines key→bibtex mappings
+	NodeCitationBlock // block: defines key→bibtex mappings (single-type, kept for compat)
 	NodeCitationRef   // inline: [C#key] resolved to \cite{bibtex}
 
 	// Figure extension nodes
-	NodeFigureBlock // block: defines key→label mappings (F#01:label)
+	NodeFigureBlock // block: defines key→label mappings (single-type, kept for compat)
 	NodeFigureRef   // inline: [F#key] resolved to \ref{fig:label}
-	NodeFigureImage // inline: ![F#key:width:pos][caption](path)
+	NodeFigureImage // inline: |- F#key:w:pos -| / |- caption -| / ![](path)
 
 	// Table-float extension nodes
-	NodeTableDef   // block: defines T# key→label mappings (invisible in output)
+	NodeTableDef   // block: defines T# key→label mappings (single-type, kept for compat)
 	NodeTableBlock // block: wraps a Table with float metadata (placement, caption, label)
 	NodeTableRef   // inline: [T#key] resolved to \ref{tab:label}
+
+	// Unified definition block — handles any mix of C#, F#, T# entries in one ---…--- block.
+	NodeDefinitionBlock
 )
 
 // Pos records where a node originated in the source text.

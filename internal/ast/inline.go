@@ -171,23 +171,23 @@ func (f *FigureRef) Children() []Node  { return nil }
 // \includegraphics[width=Width\linewidth].
 type FigureImage struct {
 	inlineBase
-	Key       string // e.g. "F#01"
-	LabelKey  string // e.g. "figurelabel01"
-	Width     string // linewidth multiplier, e.g. "1.0" or "0.5"
-	Placement string // LaTeX float specifier, e.g. "h", "ht", "ht!"
-	Caption   string // caption text
-	Path      string // image file path
+	Key           string // e.g. "F#01"
+	LabelKey      string // e.g. "figurelabel01"
+	Width         string // linewidth multiplier, e.g. "1.0" or "0.5"
+	Placement     string // LaTeX float specifier, e.g. "h", "ht", "ht!"
+	CaptionNodes  []Node // parsed inline nodes; may contain refs like \cite{}
+	Path          string // image file path
 }
 
-func NewFigureImage(pos Pos, key, labelKey, width, placement, caption, path string) *FigureImage {
+func NewFigureImage(pos Pos, key, labelKey, width, placement string, captionNodes []Node, path string) *FigureImage {
 	return &FigureImage{
-		inlineBase: inlineBase{pos: pos},
-		Key:        key,
-		LabelKey:   labelKey,
-		Width:      width,
-		Placement:  placement,
-		Caption:    caption,
-		Path:       path,
+		inlineBase:   inlineBase{pos: pos},
+		Key:          key,
+		LabelKey:     labelKey,
+		Width:        width,
+		Placement:    placement,
+		CaptionNodes: captionNodes,
+		Path:         path,
 	}
 }
 func (f *FigureImage) Type() NodeType    { return NodeFigureImage }

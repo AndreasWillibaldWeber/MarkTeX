@@ -122,4 +122,8 @@ type Visitor interface {
 	LeaveTableBlock(n *ast.TableBlock) WalkAction
 	EnterTableRef(n *ast.TableRef) WalkAction
 	LeaveTableRef(n *ast.TableRef) WalkAction
+
+	// Unified definition block (mixed C#/F#/T# entries)
+	EnterDefinitionBlock(n *ast.DefinitionBlock) WalkAction
+	LeaveDefinitionBlock(n *ast.DefinitionBlock) WalkAction
 }

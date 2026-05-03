@@ -196,39 +196,16 @@ func (p *blockParser) parse() *ast.Document {
 
 		indent := l.indent()
 
-		// ── Definition blocks (citations / figures) — must precede thematic break
-		// Both use `---` as delimiter. Check for citation or figure entry on the
-		// very next line before committing to either block type.
+		// ── Definition blocks (C#/F#/T# entries) — must precede thematic break.
+		// A single ---…--- block may contain any mix of entry types.
 		if isDefinitionDelimiterLine(content) {
 			if next := p.scanner.peek(); next != nil {
-				if p.ext.Has(ExtCitations) {
-					if _, _, ok := parseCitationEntryBytes(next.content); ok {
-						if block, ok := p.parseCitationBlock(nodePos); ok {
-							flushParagraph()
-							flushIndented()
-							p.appendToTop(block)
-							continue
-						}
-					}
-				}
-				if p.ext.Has(ExtFigures) {
-					if _, _, ok := parseFigureEntryBytes(next.content); ok {
-						if block, ok := p.parseFigureBlock(nodePos); ok {
-							flushParagraph()
-							flushIndented()
-							p.appendToTop(block)
-							continue
-						}
-					}
-				}
-				if p.ext.Has(ExtTableFloat) {
-					if _, _, ok := parseTableEntryBytes(next.content); ok {
-						if block, ok := p.parseTableDefBlock(nodePos); ok {
-							flushParagraph()
-							flushIndented()
-							p.appendToTop(block)
-							continue
-						}
+				if p.isAnyDefinitionEntry(next.content) {
+					if block, ok := p.parseDefinitionBlock(nodePos); ok {
+						flushParagraph()
+						flushIndented()
+						p.appendToTop(block)
+						continue
 					}
 				}
 			}
@@ -833,19 +810,90 @@ func (p *blockParser) parseTableBlock(firstMeta *line, pos ast.Pos) (*ast.TableB
 	}
 
 	// Extract metadata from the |- ... -| rows.
-	var key, placement, caption string
+	var key, placement, captionStr string
 	for _, raw := range metaLines {
 		inner := tableMetaContent(raw)
 		if k, pl, ok := parseTableMeta(inner); ok {
 			key, placement = k, pl
 		} else {
-			caption = inner
+			captionStr = inner
 		}
 	}
 
 	labelKey := p.refs.tables[key]
 
-	block := ast.NewTableBlock(pos, key, labelKey, placement, caption)
+	// Parse the caption string as inline so that [C#01], [F#01], etc. resolve.
+	captionNodes := parseInline(captionStr, pos, p.ext, p.refs.citations, p.refs.figures, p.refs.tables)
+
+	block := ast.NewTableBlock(pos, key, labelKey, placement, captionNodes)
 	ast.AppendChild(block, tableNode)
 	return block, true
+}
+
+// ─── Unified definition-block helpers ────────────────────────────────────────
+
+// isAnyDefinitionEntry returns true when the line is a recognised C#, F#, or
+// T# entry, according to the currently enabled extensions.
+func (p *blockParser) isAnyDefinitionEntry(content []byte) bool {
+	if p.ext.Has(ExtCitations) {
+		if _, _, ok := parseCitationEntryBytes(content); ok {
+			return true
+		}
+	}
+	if p.ext.Has(ExtFigures) {
+		if _, _, ok := parseFigureEntryBytes(content); ok {
+			return true
+		}
+	}
+	if p.ext.Has(ExtTableFloat) {
+		if _, _, ok := parseTableEntryBytes(content); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// parseDefinitionBlock reads any mix of C#, F#, and T# entries until the
+// closing `---` and returns a DefinitionBlock node. A line that matches none
+// of the enabled entry types causes the block to be rejected (the opening
+// `---` will fall through to thematic-break handling).
+func (p *blockParser) parseDefinitionBlock(pos ast.Pos) (*ast.DefinitionBlock, bool) {
+	citations := make(map[string]string)
+	figures := make(map[string]string)
+	tables := make(map[string]string)
+
+	for {
+		l := p.scanner.next()
+		if l == nil {
+			return nil, false
+		}
+		if isDefinitionDelimiterLine(l.content) {
+			break
+		}
+		if p.ext.Has(ExtCitations) {
+			if k, v, ok := parseCitationEntryBytes(l.content); ok {
+				citations[k] = v
+				continue
+			}
+		}
+		if p.ext.Has(ExtFigures) {
+			if k, v, ok := parseFigureEntryBytes(l.content); ok {
+				figures[k] = v
+				continue
+			}
+		}
+		if p.ext.Has(ExtTableFloat) {
+			if k, v, ok := parseTableEntryBytes(l.content); ok {
+				tables[k] = v
+				continue
+			}
+		}
+		// Unrecognised line — not a valid definition block
+		return nil, false
+	}
+
+	if len(citations)+len(figures)+len(tables) == 0 {
+		return nil, false
+	}
+	return ast.NewDefinitionBlock(pos, citations, figures, tables), true
 }
