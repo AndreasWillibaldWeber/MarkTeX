@@ -11,6 +11,11 @@
 // Regenerate golden files after intentional output changes:
 //
 //	go test ./testdata/snippets/ -update
+//
+// Per-snippet options are read from an optional <name>.opts sidecar file.
+// Each non-empty line is one option token. Supported tokens:
+//
+//	standalone   — run with Standalone: true
 package snippets_test
 
 import (
@@ -20,10 +25,29 @@ import (
 	"strings"
 	"testing"
 
-	"marktex/pkg/transpiler"
+	"github.com/andreaswillibaldweber/marktex/pkg/transpiler"
 )
 
 var update = flag.Bool("update", false, "overwrite .tex golden files with current output")
+
+// snippetOpts reads the optional <name>.opts sidecar and returns transpiler
+// options for the snippet. Falls back to safe defaults when the file is absent.
+func snippetOpts(name string) transpiler.Options {
+	opts := transpiler.Options{Extensions: transpiler.ExtAll}
+
+	data, err := os.ReadFile(name + ".opts")
+	if err != nil {
+		return opts // no sidecar — use defaults
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		switch strings.TrimSpace(strings.ToLower(line)) {
+		case "standalone":
+			opts.Standalone = true
+		}
+	}
+	return opts
+}
 
 func TestGolden(t *testing.T) {
 	mdFiles, err := filepath.Glob("*.md")
@@ -33,8 +57,6 @@ func TestGolden(t *testing.T) {
 	if len(mdFiles) == 0 {
 		t.Fatal("no .md snippets found")
 	}
-
-	opts := transpiler.Options{Extensions: transpiler.ExtAll}
 
 	for _, mdPath := range mdFiles {
 		mdPath := mdPath // capture
@@ -47,6 +69,7 @@ func TestGolden(t *testing.T) {
 				t.Fatalf("read %s: %v", mdPath, err)
 			}
 
+			opts := snippetOpts(name)
 			got, err := transpiler.TranspileBytes(src, opts)
 			if err != nil {
 				t.Fatalf("transpile %s: %v", mdPath, err)

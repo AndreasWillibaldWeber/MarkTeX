@@ -1,3 +1,54 @@
+\documentclass{article}
+
+% ── Encoding & fonts ─────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+
+% ── Page geometry ─────────────────────────────────────────────────────────────
+\usepackage[a4paper, margin=2.5cm]{geometry}
+
+% ── Hyperlinks ────────────────────────────────────────────────────────────────
+\usepackage[hidelinks, unicode]{hyperref}
+
+% ── Source code listings ─────────────────────────────────────────────────────
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  keepspaces=true,
+  columns=flexible,
+  frame=single,
+  numbers=left,
+  numberstyle=\tiny,
+}
+
+% ── List customisation ───────────────────────────────────────────────────────
+\usepackage{enumitem}
+
+% ── Graphics ─────────────────────────────────────────────────────────────────
+\usepackage{graphicx}
+
+% ── Tables ───────────────────────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{tabularx}
+
+% ── Document metadata ────────────────────────────────────────────────────────
+\title{Advances in Markdown Processing\\[0.5em]{\normalfont\large A Comprehensive Survey}}
+\author{Andreas W. Weber}
+\date{2026-05-03}
+
+\begin{document}
+\maketitle
+
+\tableofcontents
+
+\listoffigures
+
+\listoftables
+
+\lstlistoflistings
+
 \section{Introduction}
 
 Markdown-to-LaTeX conversion has been studied extensively~\cite{knuth1986texbook}. The \texttt{TeX} typesetting system~\cite{lamport1994latex} remains the standard for academic publishing, while Markdown~\cite{gruber2004markdown} has become the dominant lightweight markup language for technical writing. This paper presents MarkTeX, a transpiler that bridges the two.
@@ -167,3 +218,5 @@ Future work will address the CommonMark delimiter-stack algorithm~\cite{commonma
 
 See~\cite{knuth1986texbook},~\cite{lamport1994latex},~\cite{gruber2004markdown}, and~\cite{commonmark2021spec} for full bibliographic details.
 
+
+\end{document}
