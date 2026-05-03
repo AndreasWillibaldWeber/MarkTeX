@@ -1,0 +1,42 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Build output
+*.o
+*.a
+*.out
+
+# Test cache and coverage
+*.test
+*.prof
+coverage.out
+coverage.html
+
+# Go workspace
+go.work
+go.work.sum
+
+# Dependency vendor directory (if not vendoring intentionally)
+vendor/
+
+# Go generated files
+*_string.go
+
+# IDE and editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude/
+memory/
+CLAUDE.md
