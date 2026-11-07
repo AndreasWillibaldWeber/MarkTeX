@@ -38,7 +38,7 @@ const (
 // node's children but still calls the Leave method.
 //
 // Leaf nodes (Text, SoftBreak, HardBreak, CodeSpan, RawHTML, Escape, Entity,
-// ThematicBreak, FencedCode, IndentedCode, HTMLBlock) have no meaningful Leave
+// Math, ThematicBreak, FencedCode, IndentedCode, HTMLBlock) have no meaningful Leave
 // call; the BaseVisitor provides no-op Leave implementations for consistency.
 type Visitor interface {
 	// Block nodes
@@ -100,6 +100,8 @@ type Visitor interface {
 	LeaveEntity(n *ast.Entity) WalkAction
 	EnterStrikethrough(n *ast.Strikethrough) WalkAction
 	LeaveStrikethrough(n *ast.Strikethrough) WalkAction
+	EnterMath(n *ast.Math) WalkAction
+	LeaveMath(n *ast.Math) WalkAction
 
 	// Citation extension
 	EnterCitationBlock(n *ast.CitationBlock) WalkAction

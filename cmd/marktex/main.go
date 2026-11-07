@@ -15,7 +15,8 @@
 //	-o <file>       Write output to file instead of stdout
 //	-standalone     Emit a complete LaTeX document (\documentclass…\end{document})
 //	-strict         Exit non-zero when an unsupported construct is encountered
-//	-ext <list>     Comma-separated extensions to enable: tables,strikethrough,autolinks (default: all)
+//	-ext <list>     Comma-separated extensions to enable: tables,strikethrough,autolinks,
+//	                citations,figures,tableFloat,documentMeta,math (default: all)
 //	-no-ext <list>  Comma-separated extensions to disable
 //	-version        Print version and exit
 package main
@@ -43,7 +44,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	outputFile := fs.String("o", "", "write output to `file` (default: stdout)")
 	standalone := fs.Bool("standalone", false, "emit a complete LaTeX document")
 	strict := fs.Bool("strict", false, "exit non-zero on unsupported constructs")
-	extStr := fs.String("ext", "all", "comma-separated extensions to enable: tables,strikethrough,autolinks,all,none")
+	extStr := fs.String("ext", "all", "comma-separated extensions to enable: tables,strikethrough,autolinks,citations,figures,tableFloat,documentMeta,math,all,none")
 	noExtStr := fs.String("no-ext", "", "comma-separated extensions to disable")
 	showVersion := fs.Bool("version", false, "print version and exit")
 
@@ -105,8 +106,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 }
 
 // parseExtensions converts a comma-separated extension list to an Extension
-// bitmask. Recognised tokens: "all", "none", "tables", "strikethrough",
-// "autolinks". Unknown tokens are silently ignored.
+// bitmask. Recognised tokens (case-insensitive): "all", "none", "tables",
+// "strikethrough", "autolinks", "citations", "figures", "tableFloat",
+// "documentMeta", "math". Unknown tokens are silently ignored.
 func parseExtensions(s string) transpiler.Extension {
 	if s == "" {
 		return 0
@@ -124,6 +126,16 @@ func parseExtensions(s string) transpiler.Extension {
 			ext |= transpiler.ExtStrikethrough
 		case "autolinks":
 			ext |= transpiler.ExtAutolinks
+		case "citations":
+			ext |= transpiler.ExtCitations
+		case "figures":
+			ext |= transpiler.ExtFigures
+		case "tablefloat":
+			ext |= transpiler.ExtTableFloat
+		case "documentmeta":
+			ext |= transpiler.ExtDocumentMeta
+		case "math":
+			ext |= transpiler.ExtMath
 		}
 	}
 	return ext

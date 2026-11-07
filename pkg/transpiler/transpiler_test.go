@@ -1172,3 +1172,173 @@ func TestTableCellsUnaffectedByLineBreakHandling(t *testing.T) {
 		t.Errorf("want exactly 2 row terminators, got %d\ngot: %q", n, got)
 	}
 }
+
+// ── Math extension (issue #6) ────────────────────────────────────────────────
+
+// TestInlineMathIssue06 reproduces the exact report from issue #6.
+func TestInlineMathIssue06(t *testing.T) {
+	got := transpile(t, "$2+3=5$\n", transpiler.ExtAll)
+	if want := "$2+3=5$\n\n"; got != want {
+		t.Errorf("want exactly %q\ngot:        %q", want, got)
+	}
+}
+
+func TestExtAllIncludesMath(t *testing.T) {
+	if transpiler.ExtAll&transpiler.ExtMath == 0 {
+		t.Fatal("ExtAll must include ExtMath so the CLI default renders math")
+	}
+}
+
+func TestInlineMath(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"in sentence", "The sum $2+3=5$ holds.", "The sum $2+3=5$ holds."},
+		{"latex commands kept verbatim", `$e^{i\pi}+1=0$`, `$e^{i\pi}+1=0$`},
+		{"special characters not escaped", `$x_1 \le y^2 \& z$`, `$x_1 \le y^2 \& z$`},
+		{"percent kept verbatim", `$50\%$`, `$50\%$`},
+		{"two spans in one paragraph", "$x$ and $y$", "$x$ and $y$"},
+		{"escaped dollar inside math", `$a \$ b$`, `$a \$ b$`},
+		{"mid-word", "a$b$c", "a$b$c"},
+		{"inside emphasis", "*emph $x$ inside*", `\textit{emph $x$ inside}`},
+		{"inside strong", "**$x$**", `\textbf{$x$}`},
+		{"inside link text", "[link $x$](http://u)", `\href{http://u}{link $x$}`},
+		{"inside heading", "# Energy $E=mc^2$", `\section{Energy $E=mc^2$}`},
+		{"inside list item", "- item $x^2$", `\item item $x^2$`},
+		{"inside block quote", "> quote $a+b$", "quote $a+b$"},
+		{"inside table cell", "| a | b |\n|---|---|\n| $x$ | $y$ |", `$x$ & $y$ \\`},
+		{"text around math still escaped", "100% of $x$ & more", `100\% of $x$ \& more`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := transpile(t, tc.input, transpiler.ExtAll)
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("missing %q\ngot: %q", tc.want, got)
+			}
+			// Every escaped dollar in the output must be one the expectation asks for.
+			if strings.Count(got, `\$`) != strings.Count(tc.want, `\$`) {
+				t.Errorf("math delimiter was escaped\ngot: %q", got)
+			}
+		})
+	}
+}
+
+func TestDisplayMath(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"basic", "$$E=mc^2$$", `\[E=mc^2\]`},
+		{"surrounding whitespace trimmed", `$$ \frac{a}{b} $$`, `\[\frac{a}{b}\]`},
+		{"within a sentence", "Display: $$E=mc^2$$ here.", `Display: \[E=mc^2\] here.`},
+		{"spanning lines", "$$\n\\sum_i x_i\n$$", `\[\sum_i x_i\]`},
+		{"escaped dollar inside", `$$ a \$ b $$`, `\[a \$ b\]`},
+		{"followed by inline math", "$$a$$ and $b$", `\[a\] and $b$`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := transpile(t, tc.input, transpiler.ExtAll)
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("missing %q\ngot: %q", tc.want, got)
+			}
+			if strings.Contains(got, "$$") {
+				t.Errorf("display delimiters leaked into output\ngot: %q", got)
+			}
+		})
+	}
+}
+
+// TestNotMath lists dollar signs that must stay literal, escaped text under
+// the Pandoc rules the extension follows.
+func TestNotMath(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"single price", "Price is $10.00 today.", `Price is \$10.00 today.`},
+		{"two prices", "$20,000 and $30,000", `\$20,000 and \$30,000`},
+		{"price in parentheses", "Costs $5 (about $4.50).", `Costs \$5 (about \$4.50).`},
+		{"space after opener", "$ x$", `\$ x\$`},
+		{"space before closer", "$x $", `\$x \$`},
+		{"newline before closer", "$x\n$", `\$x \$`},
+		{"digit after closer", "$x$5", `\$x\$5`},
+		{"escaped delimiters", `\$2+3=5\$`, `\$2+3=5\$`},
+		{"empty display", "Only $$ alone", `Only \$\$ alone`},
+		{"unterminated display", "$$x", `\$\$x`},
+		{"lone dollar", "Lone $ sign", `Lone \$ sign`},
+		{"unterminated inline", "$x and more", `\$x and more`},
+		{"code span", "`$x$`", `\texttt{\$x\$}`},
+		// Stricter than Pandoc: inline math stays on one line and never
+		// swallows a code span, so a stray price cannot run on.
+		{"spanning a line ending", "$x\ny$", `\$x y\$`},
+		{"closer inside a later code span", "costs $5 and `$x`", `costs \$5 and \texttt{\$x}`},
+		{"price then code span on next line", "or $5 (about $4.50).\nSee `$x$` here.", `or \$5 (about \$4.50). See \texttt{\$x\$} here.`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := transpile(t, tc.input, transpiler.ExtAll)
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("missing %q\ngot: %q", tc.want, got)
+			}
+			if strings.Count(got, "$") != strings.Count(got, `\$`) {
+				t.Errorf("unescaped dollar sign in output\ngot: %q", got)
+			}
+		})
+	}
+}
+
+func TestMathInsideCodeBlocksIsVerbatim(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"fenced", "```\n$x$ and $$y$$\n```"},
+		{"indented", "    $x$ and $$y$$"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := transpile(t, tc.input, transpiler.ExtAll)
+			if !strings.Contains(got, "$x$ and $$y$$\n") {
+				t.Errorf("code content altered\ngot: %q", got)
+			}
+			if strings.Contains(got, `\[`) {
+				t.Errorf("display math produced inside code\ngot: %q", got)
+			}
+		})
+	}
+}
+
+func TestMathExtensionDisabled(t *testing.T) {
+	for name, ext := range map[string]transpiler.Extension{
+		"all-but-math": transpiler.ExtAll &^ transpiler.ExtMath,
+		"tables-only":  transpiler.ExtTables,
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := transpile(t, "$2+3=5$ and $$E$$", ext)
+			if want := `\$2+3=5\$ and \$\$E\$\$`; !strings.Contains(got, want) {
+				t.Errorf("missing %q\ngot: %q", want, got)
+			}
+		})
+	}
+}
+
+func TestMathStandalonePreamble(t *testing.T) {
+	for _, src := range []string{"inline $x$", "display $$x$$"} {
+		got, err := transpiler.TranspileString(src, transpiler.Options{Standalone: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertInOrder(t, got, `\usepackage{amsmath}`, `\usepackage{amssymb}`, `\begin{document}`)
+	}
+	got, err := transpiler.TranspileString("no math here", transpiler.Options{Standalone: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "amsmath") || strings.Contains(got, "amssymb") {
+		t.Errorf("math packages included without math\ngot:\n%s", got)
+	}
+}

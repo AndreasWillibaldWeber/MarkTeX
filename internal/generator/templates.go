@@ -14,6 +14,7 @@ type preambleOpts struct {
 	needsUlem     bool
 	needsGraphicx bool
 	needsBooktabs bool
+	needsAmsmath  bool
 
 	// Document metadata (standalone mode only).
 	author   string
@@ -84,6 +85,14 @@ func standalonePreamble(opts preambleOpts) string {
 % ── Tables ───────────────────────────────────────────────────────────────────
 \usepackage{booktabs}
 \usepackage{tabularx}
+`)
+	}
+
+	if opts.needsAmsmath {
+		b.WriteString(`
+% ── Mathematics ──────────────────────────────────────────────────────────────
+\usepackage{amsmath}
+\usepackage{amssymb}
 `)
 	}
 

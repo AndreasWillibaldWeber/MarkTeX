@@ -78,6 +78,8 @@ func (BaseVisitor) EnterEntity(_ *ast.Entity) WalkAction                   { ret
 func (BaseVisitor) LeaveEntity(_ *ast.Entity) WalkAction                   { return WalkContinue }
 func (BaseVisitor) EnterStrikethrough(_ *ast.Strikethrough) WalkAction     { return WalkContinue }
 func (BaseVisitor) LeaveStrikethrough(_ *ast.Strikethrough) WalkAction     { return WalkContinue }
+func (BaseVisitor) EnterMath(_ *ast.Math) WalkAction                       { return WalkContinue }
+func (BaseVisitor) LeaveMath(_ *ast.Math) WalkAction                       { return WalkContinue }
 func (BaseVisitor) EnterCitationBlock(_ *ast.CitationBlock) WalkAction     { return WalkContinue }
 func (BaseVisitor) LeaveCitationBlock(_ *ast.CitationBlock) WalkAction     { return WalkContinue }
 func (BaseVisitor) EnterCitationRef(_ *ast.CitationRef) WalkAction         { return WalkContinue }

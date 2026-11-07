@@ -45,6 +45,7 @@ const (
 	NodeEscape
 	NodeEntity
 	NodeStrikethrough
+	NodeMath // inline: $…$ or $$…$$ TeX math passed through verbatim (ExtMath)
 
 	// Citation extension nodes
 	NodeCitationBlock // block: defines key→bibtex mappings (single-type, kept for compat)

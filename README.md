@@ -62,6 +62,7 @@ echo "# Hello" | ./bin/marktex
 | `figures` | `F#key` labeled figure floats → `\ref{fig:…}` |
 | `tableFloat` | `T#key` labeled table floats → `\ref{tab:…}` |
 | `documentMeta` | Document metadata and front-matter commands |
+| `math` | TeX math: `$…$` inline, `$$…$$` display |
 | `all` | All of the above (default) |
 | `none` | Base Markdown only |
 
@@ -95,6 +96,10 @@ Setext headings (`===` underline → `\section`, `---` underline → `\subsectio
 | `~~strikethrough~~` | `\sout{strikethrough}` (requires `ulem`) |
 | `\*escaped\*` | literal `*` |
 | `&amp;`, `&#65;`, `&#x41;` | decoded Unicode character |
+| `$E=mc^2$` | `$E=mc^2$` (verbatim TeX math, extension `math`) |
+| `$$E=mc^2$$` | `\[E=mc^2\]` (display math, extension `math`) |
+
+With the `math` extension (enabled by default) the content between dollar signs is passed to LaTeX unchanged; `amsmath` and `amssymb` are added to the standalone preamble. The opening `$` must be followed by a non-space character and the closing `$` must be preceded by one and must not be followed by a digit, so prices like `$20,000 and $30,000` stay literal text. Inline math must stay on one line and cannot contain a backtick; display math may span lines. Write `\$` for a literal dollar sign next to math, or disable the extension with `-no-ext math`.
 
 ---
 

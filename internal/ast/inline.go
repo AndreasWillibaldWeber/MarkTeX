@@ -130,6 +130,20 @@ type Strikethrough struct{ inlineBase }
 func NewStrikethrough(pos Pos) *Strikethrough { return &Strikethrough{inlineBase{pos: pos}} }
 func (s *Strikethrough) Type() NodeType       { return NodeStrikethrough }
 
+// Math is TeX math passed through to LaTeX verbatim (ExtMath). Display is
+// true for $$…$$, which renders as \[…\]; inline $…$ renders as $…$.
+type Math struct {
+	inlineBase
+	Literal string
+	Display bool
+}
+
+func NewMath(pos Pos, literal string, display bool) *Math {
+	return &Math{inlineBase: inlineBase{pos: pos}, Literal: literal, Display: display}
+}
+func (m *Math) Type() NodeType   { return NodeMath }
+func (m *Math) Children() []Node { return nil }
+
 // ─── Citation extension ───────────────────────────────────────────────────────
 
 // CitationRef is an inline citation reference [C#key] that resolves to

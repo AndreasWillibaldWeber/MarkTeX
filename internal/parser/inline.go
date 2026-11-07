@@ -89,6 +89,10 @@ func (p *inlineParser) parseOne() []ast.Node {
 		if nodes, ok := p.parseEntity(); ok {
 			return nodes
 		}
+	case p.ext.Has(ExtMath) && ch == '$':
+		if nodes, ok := p.parseMath(); ok {
+			return nodes
+		}
 	case ch == '\n':
 		return p.parseLineBreak()
 	}
@@ -537,6 +541,70 @@ func (p *inlineParser) parseEntity() ([]ast.Node, bool) {
 	}
 	p.pos += end + 1
 	return []ast.Node{ast.NewEntity(nodePos, seq, r)}, true
+}
+
+// parseMath handles Pandoc-style TeX math and keeps the content verbatim.
+//
+// Display math is `$$…$$` with non-empty content; surrounding whitespace is
+// trimmed and the content may span lines. Inline math is `$…$` where the
+// opening `$` is followed by a non-space character and the closing `$` is
+// preceded by one and is not followed by a digit. A backslash-escaped
+// character inside the math never closes it. If the first closing candidate
+// violates a rule the whole span is rejected, as in Pandoc, so "$20,000 and
+// $30,000" stays literal text. Stricter than Pandoc, inline math must stay on
+// one line and may not contain a backtick: otherwise a stray "$5" would run
+// on until the next dollar sign, even one inside a later code span.
+func (p *inlineParser) parseMath() ([]ast.Node, bool) {
+	nodePos := p.posAt(p.pos)
+	start := p.pos
+
+	if start+1 < len(p.src) && p.src[start+1] == '$' {
+		open := start + 2
+		end := indexUnescaped(p.src, open, "$$")
+		if end < 0 {
+			return nil, false
+		}
+		literal := strings.TrimSpace(p.src[open:end])
+		if literal == "" {
+			return nil, false
+		}
+		p.pos = end + 2
+		return []ast.Node{ast.NewMath(nodePos, literal, true)}, true
+	}
+
+	open := start + 1
+	if open >= len(p.src) || isSpaceByte(p.src[open]) {
+		return nil, false
+	}
+	end := indexUnescaped(p.src, open, "$")
+	if end < 0 || isSpaceByte(p.src[end-1]) || strings.ContainsAny(p.src[open:end], "\n`") {
+		return nil, false
+	}
+	if end+1 < len(p.src) && p.src[end+1] >= '0' && p.src[end+1] <= '9' {
+		return nil, false
+	}
+	p.pos = end + 1
+	return []ast.Node{ast.NewMath(nodePos, p.src[open:end], false)}, true
+}
+
+// indexUnescaped returns the index of the first occurrence of sep in src at or
+// after from, skipping any character preceded by a backslash. Returns -1 when
+// sep is not found.
+func indexUnescaped(src string, from int, sep string) int {
+	for i := from; i+len(sep) <= len(src); i++ {
+		if src[i] == '\\' {
+			i++ // skip the escaped character
+			continue
+		}
+		if src[i:i+len(sep)] == sep {
+			return i
+		}
+	}
+	return -1
+}
+
+func isSpaceByte(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\n'
 }
 
 // parseLineBreak handles `\n` within inline content. It always emits a

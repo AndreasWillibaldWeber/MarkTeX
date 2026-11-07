@@ -23,6 +23,7 @@
 //   - ExtStrikethrough: GFM ~~strikethrough~~
 //   - ExtCitations:     Citation blocks and inline [C#key] → \cite{}
 //   - ExtFigures:       Figure blocks and ![F#key:w:pos][cap](path) → figure env
+//   - ExtMath:          TeX math between $…$ (inline) and $$…$$ (display)
 package parser
 
 import (
@@ -54,9 +55,16 @@ const (
 	//   Author, Title, Subtitle, Date, MakeTitlePage, MakeTOC, MakeLOF, MakeLOT, MakeLOL.
 	// Only applied when the generator runs in standalone mode.
 	ExtDocumentMeta
+	// ExtMath enables Pandoc-style TeX math: $…$ for inline math and $$…$$ for
+	// display math. The content is passed to LaTeX verbatim. An opening $ must
+	// be followed by a non-space character, a closing $ must be preceded by a
+	// non-space character and must not be followed by a digit, so prices such
+	// as "$20,000 and $30,000" stay literal text. Inline math stays on one line
+	// and never contains a backtick; display math may span lines.
+	ExtMath
 
 	// ExtAll enables all available extensions.
-	ExtAll = ExtTables | ExtStrikethrough | ExtAutolinks | ExtCitations | ExtFigures | ExtTableFloat | ExtDocumentMeta
+	ExtAll = ExtTables | ExtStrikethrough | ExtAutolinks | ExtCitations | ExtFigures | ExtTableFloat | ExtDocumentMeta | ExtMath
 )
 
 // Has reports whether ext includes the given extension flag.

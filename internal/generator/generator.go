@@ -465,6 +465,21 @@ func (g *Generator) LeaveStrikethrough(_ *ast.Strikethrough) visitor.WalkAction 
 	return visitor.WalkContinue
 }
 
+// ─── Math extension ──────────────────────────────────────────────────────────
+
+// EnterMath emits the TeX source verbatim: no escaping, because the content
+// is already LaTeX. Display math uses \[…\] rather than $$…$$, which is a
+// plain-TeX construct that amsmath discourages.
+func (g *Generator) EnterMath(n *ast.Math) visitor.WalkAction {
+	g.po.needsAmsmath = true
+	if n.Display {
+		g.write(`\[` + n.Literal + `\]`)
+	} else {
+		g.write("$" + n.Literal + "$")
+	}
+	return visitor.WalkSkipChildren
+}
+
 // ─── Citation extension ───────────────────────────────────────────────────────
 
 // EnterCitationBlock produces no output: the block is metadata only.

@@ -71,6 +71,16 @@ const (
 	// in fragment mode.
 	ExtDocumentMeta = parser.ExtDocumentMeta
 
+	// ExtMath enables Pandoc-style TeX math, passed through to LaTeX verbatim:
+	//
+	//   The sum $2+3=5$ holds.      →   The sum $2+3=5$ holds.
+	//   $$E = mc^2$$                →   \[E = mc^2\]
+	//
+	// An opening $ must be followed by a non-space character; a closing $ must
+	// be preceded by a non-space character and not be followed by a digit, so
+	// "$20,000 and $30,000" remains literal (escaped) text.
+	ExtMath = parser.ExtMath
+
 	// ExtAll enables all available extensions.
 	ExtAll = parser.ExtAll
 )

@@ -89,6 +89,8 @@ func enter(n ast.Node, v Visitor) WalkAction {
 		return v.EnterEntity(n.(*ast.Entity))
 	case ast.NodeStrikethrough:
 		return v.EnterStrikethrough(n.(*ast.Strikethrough))
+	case ast.NodeMath:
+		return v.EnterMath(n.(*ast.Math))
 	case ast.NodeCitationBlock:
 		return v.EnterCitationBlock(n.(*ast.CitationBlock))
 	case ast.NodeCitationRef:
@@ -170,6 +172,8 @@ func leave(n ast.Node, v Visitor) WalkAction {
 		return v.LeaveEntity(n.(*ast.Entity))
 	case ast.NodeStrikethrough:
 		return v.LeaveStrikethrough(n.(*ast.Strikethrough))
+	case ast.NodeMath:
+		return v.LeaveMath(n.(*ast.Math))
 	case ast.NodeCitationBlock:
 		return v.LeaveCitationBlock(n.(*ast.CitationBlock))
 	case ast.NodeCitationRef:
