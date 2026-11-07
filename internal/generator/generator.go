@@ -155,7 +155,14 @@ var headingCommands = [7]string{
 	3: `\subsubsection`,
 	4: `\paragraph`,
 	5: `\subparagraph`,
-	6: `\textbf`, // no standard level-6 in LaTeX
+	6: `\noindent\textbf`, // no level-6 command in LaTeX: a free-standing bold line
+}
+
+// runInHeading reports whether the LaTeX command for level is a run-in
+// heading in the standard classes (\paragraph, \subparagraph), where the
+// following text continues on the heading's own line.
+func runInHeading(level int) bool {
+	return level == 4 || level == 5
 }
 
 func (g *Generator) EnterHeading(n *ast.Heading) visitor.WalkAction {
@@ -165,9 +172,16 @@ func (g *Generator) EnterHeading(n *ast.Heading) visitor.WalkAction {
 	return visitor.WalkContinue
 }
 
-func (g *Generator) LeaveHeading(_ *ast.Heading) visitor.WalkAction {
+func (g *Generator) LeaveHeading(n *ast.Heading) visitor.WalkAction {
 	g.inHeading = false
-	g.write("}\n\n")
+	g.write("}")
+	// Markdown headings are always blocks. An empty \mbox after a run-in
+	// heading ends its line, so the next block starts on a new line instead
+	// of continuing the heading (the device Pandoc's default template uses).
+	if runInHeading(n.Level) {
+		g.write(`\mbox{}`)
+	}
+	g.write("\n\n")
 	return visitor.WalkContinue
 }
 

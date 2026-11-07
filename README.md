@@ -77,9 +77,11 @@ echo "# Hello" | ./bin/marktex
 | `# Heading` | `\section{Heading}` |
 | `## Heading` | `\subsection{Heading}` |
 | `### Heading` | `\subsubsection{Heading}` |
-| `#### Heading` | `\paragraph{Heading}` |
-| `##### Heading` | `\subparagraph{Heading}` |
-| `###### Heading` | `\textbf{Heading}` |
+| `#### Heading` | `\paragraph{Heading}\mbox{}` |
+| `##### Heading` | `\subparagraph{Heading}\mbox{}` |
+| `###### Heading` | `\noindent\textbf{Heading}` |
+
+`\paragraph` and `\subparagraph` are run-in headings in LaTeX's standard classes, so the text after them would continue on the heading's line. The empty `\mbox{}` ends that line and keeps every Markdown heading a block of its own; level 6 has no LaTeX counterpart and renders as a flush-left bold line.
 
 Setext headings (`===` underline → `\section`, `---` underline → `\subsection`) are also supported. A `---` line directly below paragraph text is always read as a setext underline, never as a thematic break or a table separator row; put a blank line between the text and the `---` to get a rule.
 

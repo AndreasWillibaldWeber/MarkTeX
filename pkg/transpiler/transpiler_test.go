@@ -4,6 +4,7 @@
 package transpiler_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -19,8 +20,9 @@ func TestHeadings(t *testing.T) {
 		{"h1", "# Heading", `\section{Heading}`},
 		{"h2", "## Heading", `\subsection{Heading}`},
 		{"h3", "### Heading", `\subsubsection{Heading}`},
-		{"h4", "#### Heading", `\paragraph{Heading}`},
-		{"h5", "##### Heading", `\subparagraph{Heading}`},
+		{"h4", "#### Heading", `\paragraph{Heading}\mbox{}`},
+		{"h5", "##### Heading", `\subparagraph{Heading}\mbox{}`},
+		{"h6", "###### Heading", `\noindent\textbf{Heading}`},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1340,5 +1342,96 @@ func TestMathStandalonePreamble(t *testing.T) {
 	}
 	if strings.Contains(got, "amsmath") || strings.Contains(got, "amssymb") {
 		t.Errorf("math packages included without math\ngot:\n%s", got)
+	}
+}
+
+// ── Heading levels 4-6 (issue #1) ────────────────────────────────────────────
+
+// TestHeadingLevels5And6Issue01 reproduces the exact report from issue #1.
+// \subparagraph is a run-in heading; without the \mbox{} the level-6 heading
+// is typeset on the same line.
+func TestHeadingLevels5And6Issue01(t *testing.T) {
+	got := transpile(t, "##### Header 5\n###### Header 6\n", transpiler.ExtAll)
+	want := "\\subparagraph{Header 5}\\mbox{}\n\n\\noindent\\textbf{Header 6}\n\n"
+	if got != want {
+		t.Errorf("want exactly %q\ngot:        %q", want, got)
+	}
+}
+
+// TestHeadingCommandsPerLevel pins the full output of a heading followed by a
+// paragraph at every level: the command, the run-in guard where needed, and
+// the blank line that separates the heading block from the body.
+func TestHeadingCommandsPerLevel(t *testing.T) {
+	tests := []struct {
+		level int
+		want  string
+	}{
+		{1, "\\section{Title}\n\n"},
+		{2, "\\subsection{Title}\n\n"},
+		{3, "\\subsubsection{Title}\n\n"},
+		{4, "\\paragraph{Title}\\mbox{}\n\n"},
+		{5, "\\subparagraph{Title}\\mbox{}\n\n"},
+		{6, "\\noindent\\textbf{Title}\n\n"},
+	}
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("level%d", tc.level), func(t *testing.T) {
+			src := strings.Repeat("#", tc.level) + " Title\nBody text."
+			got := transpile(t, src, transpiler.ExtAll)
+			if want := tc.want + "Body text.\n\n"; got != want {
+				t.Errorf("want exactly %q\ngot:        %q", want, got)
+			}
+		})
+	}
+}
+
+// TestDeepHeadingFollowedByBlock checks the guard in front of every kind of
+// block that can directly follow a run-in heading.
+func TestDeepHeadingFollowedByBlock(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"paragraph", "##### H\nText", "\\subparagraph{H}\\mbox{}\n\nText"},
+		{"bullet list", "#### H\n- a", "\\paragraph{H}\\mbox{}\n\n\\begin{itemize}"},
+		{"ordered list", "#### H\n1. a", "\\paragraph{H}\\mbox{}\n\n\\begin{enumerate}"},
+		{"block quote", "#### H\n> q", "\\paragraph{H}\\mbox{}\n\n\\begin{quote}"},
+		{"fenced code", "#### H\n```\nx\n```", "\\paragraph{H}\\mbox{}\n\n\\begin{lstlisting}"},
+		{"table", "#### H\n| a |\n|---|", "\\paragraph{H}\\mbox{}\n\n\\begin{tabular}"},
+		{"thematic break", "#### H\n---", "\\paragraph{H}\\mbox{}\n\n"},
+		{"chain of deep headings", "#### H4\n##### H5\n###### H6",
+			"\\paragraph{H4}\\mbox{}\n\n\\subparagraph{H5}\\mbox{}\n\n\\noindent\\textbf{H6}\n\n"},
+		{"inside block quote", "> ##### H\n> text",
+			"\\begin{quote}\n\\subparagraph{H}\\mbox{}\n\ntext\n\n\\end{quote}"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := transpile(t, tc.input, transpiler.ExtAll)
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("missing %q\ngot: %q", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestDeepHeadingInlineContent(t *testing.T) {
+	got := transpile(t, "#### *x* and $y$ and `c`\n\n###### **b** only", transpiler.ExtAll)
+	for _, want := range []string{
+		"\\paragraph{\\textit{x} and $y$ and \\texttt{c}}\\mbox{}\n\n",
+		"\\noindent\\textbf{\\textbf{b} only}\n\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q\ngot: %q", want, got)
+		}
+	}
+}
+
+// TestShallowHeadingsHaveNoRunInGuard: \section through \subsubsection and
+// both setext forms are display headings and must stay untouched.
+func TestShallowHeadingsHaveNoRunInGuard(t *testing.T) {
+	got := transpile(t, "# A\n## B\n### C\nD\n===\n\nE\n---\ntext", transpiler.ExtAll)
+	assertInOrder(t, got, "\\section{A}\n\n", "\\subsection{B}\n\n", "\\subsubsection{C}\n\n", "\\section{D}\n\n", "\\subsection{E}\n\ntext")
+	if strings.Contains(got, `\mbox`) || strings.Contains(got, `\noindent`) {
+		t.Errorf("run-in guard applied to a display heading\ngot: %q", got)
 	}
 }
