@@ -735,3 +735,256 @@ func TestDocumentMetaMixedWithRefs(t *testing.T) {
 		}
 	}
 }
+
+// ── Setext headings (issue #2) ────────────────────────────────────────────────
+
+// setextExtensionSets covers the configurations in which issue #2 manifested
+// differently: without tables the `---` underline became a thematic break,
+// with tables (the CLI default) it became a one-column table. Options treats
+// an Extensions value of 0 as ExtAll, so "no-tables" uses a non-zero mask.
+var setextExtensionSets = map[string]transpiler.Extension{
+	"no-tables": transpiler.ExtStrikethrough,
+	"tables":    transpiler.ExtTables,
+	"all":       transpiler.ExtAll,
+}
+
+func transpile(t *testing.T, src string, ext transpiler.Extension) string {
+	t.Helper()
+	got, err := transpiler.TranspileString(src, transpiler.Options{Extensions: ext})
+	if err != nil {
+		t.Fatalf("TranspileString(%q): %v", src, err)
+	}
+	return got
+}
+
+// assertInOrder checks that every substring is present and that they appear in
+// the given order.
+func assertInOrder(t *testing.T, got string, subs ...string) {
+	t.Helper()
+	prev := -1
+	for _, s := range subs {
+		idx := strings.Index(got, s)
+		if idx < 0 {
+			t.Errorf("missing %q\ngot:\n%s", s, got)
+			return
+		}
+		if idx < prev {
+			t.Errorf("%q appears out of order\ngot:\n%s", s, got)
+			return
+		}
+		prev = idx
+	}
+}
+
+// TestSetextHeadingIssue02 reproduces the exact report from issue #2: a `---`
+// underline directly below a paragraph line is a level-2 heading, not a table.
+func TestSetextHeadingIssue02(t *testing.T) {
+	const src = "Also header 2 (not a table!)\n-------------\n"
+	const want = "\\subsection{Also header 2 (not a table!)}\n\n"
+	for name, ext := range setextExtensionSets {
+		t.Run(name, func(t *testing.T) {
+			if got := transpile(t, src, ext); got != want {
+				t.Errorf("want exactly %q\ngot:\n%s", want, got)
+			}
+		})
+	}
+}
+
+func TestSetextHeadings(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"h1 long underline", "Title\n=========", `\section{Title}`},
+		{"h1 minimal underline", "Title\n=", `\section{Title}`},
+		{"h2 long underline", "Title\n---------", `\subsection{Title}`},
+		{"h2 minimal underline", "Title\n-", `\subsection{Title}`},
+		{"h2 exactly three dashes", "Title\n---", `\subsection{Title}`},
+		{"trailing whitespace on underline", "Title\n---  \t", `\subsection{Title}`},
+		{"underline indented three spaces", "Title\n   ---", `\subsection{Title}`},
+		{"multi-line heading content", "Line one\nLine two\n---", `\subsection{Line one Line two}`},
+		{"inline markup in heading", "*Foo* and `bar`\n---", `\subsection{\textit{Foo} and \texttt{bar}}`},
+		{"trailing spaces on text are trimmed", "Title  \n---", `\subsection{Title}`},
+		{"pipes in text stay text", "| a | b |\n---", `\subsection{| a | b |}`},
+		{"heading after a paragraph", "intro\n\nTitle\n---", `\subsection{Title}`},
+		{"crlf line endings", "Title\r\n---\r\n", `\subsection{Title}`},
+	}
+	for name, ext := range setextExtensionSets {
+		for _, tc := range tests {
+			t.Run(name+"/"+tc.name, func(t *testing.T) {
+				got := transpile(t, tc.input, ext)
+				if !strings.Contains(got, tc.want) {
+					t.Errorf("missing %q\ngot:\n%s", tc.want, got)
+				}
+				for _, bad := range []string{`\begin{tabular}`, `\noindent\rule`} {
+					if strings.Contains(got, bad) {
+						t.Errorf("unexpected %q\ngot:\n%s", bad, got)
+					}
+				}
+			})
+		}
+	}
+}
+
+// TestSetextUnderlineNotRecognised lists lines that must never be read as a
+// setext underline. None of them may yield a heading or a table either.
+func TestSetextUnderlineNotRecognised(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string // optional positive expectation
+	}{
+		{"blank line before dashes", "Text\n\n---", `\noindent\rule`},
+		{"spaced dashes are a thematic break", "Text\n- - -", `\noindent\rule`},
+		{"mixed characters are paragraph text", "Text\n--a", "Text --a"},
+		// Four spaces of indentation disqualify an underline; the exact
+		// fallback rendering is not pinned here.
+		{"four-space indent", "Text\n    ---", ""},
+		{"no open paragraph after list item", "- item\n===", `\item item`},
+		{"underline-like text at start of input", "---\nText", "Text"},
+	}
+	for name, ext := range setextExtensionSets {
+		for _, tc := range tests {
+			t.Run(name+"/"+tc.name, func(t *testing.T) {
+				got := transpile(t, tc.input, ext)
+				if tc.want != "" && !strings.Contains(got, tc.want) {
+					t.Errorf("missing %q\ngot:\n%s", tc.want, got)
+				}
+				for _, bad := range []string{`\section{`, `\subsection{`, `\begin{tabular}`} {
+					if strings.Contains(got, bad) {
+						t.Errorf("unexpected %q\ngot:\n%s", bad, got)
+					}
+				}
+			})
+		}
+	}
+}
+
+// TestThematicBreaksUnaffectedBySetextPrecedence guards every thematic-break
+// position that does not follow an open paragraph.
+func TestThematicBreaksUnaffectedBySetextPrecedence(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		also  string // additional expected substring
+	}{
+		{"dashes alone", "---", ""},
+		{"asterisks alone", "***", ""},
+		{"underscores alone", "___", ""},
+		{"spaced dashes alone", "- - -", ""},
+		{"after blank-line separated paragraph", "Text\n\n---", "Text"},
+		{"directly after ATX heading", "# Title\n---", `\section{Title}`},
+		{"directly after fenced code", "```\ncode\n```\n---", `\end{lstlisting}`},
+		{"directly after indented code", "    code\n---", `\begin{verbatim}`},
+		{"directly after bullet list", "- item\n---", `\item item`},
+		{"directly after ordered list", "1. item\n---", `\item item`},
+		{"between paragraphs", "Before\n\n---\n\nAfter", "After"},
+	}
+	for name, ext := range setextExtensionSets {
+		for _, tc := range tests {
+			t.Run(name+"/"+tc.name, func(t *testing.T) {
+				got := transpile(t, tc.input, ext)
+				if !strings.Contains(got, `\noindent\rule`) {
+					t.Errorf("missing thematic break\ngot:\n%s", got)
+				}
+				if tc.also != "" && !strings.Contains(got, tc.also) {
+					t.Errorf("missing %q\ngot:\n%s", tc.also, got)
+				}
+				for _, bad := range []string{`\section{`, `\subsection{`, `\begin{tabular}`} {
+					if strings.HasPrefix(tc.also, bad) {
+						continue // the ATX case legitimately contains \section{
+					}
+					if strings.Contains(got, bad) {
+						t.Errorf("unexpected %q\ngot:\n%s", bad, got)
+					}
+				}
+			})
+		}
+	}
+}
+
+// TestTablesUnaffectedBySetextPrecedence verifies that real GFM tables, whose
+// separator rows contain pipes or colons, are still recognised everywhere a
+// table may appear.
+func TestTablesUnaffectedBySetextPrecedence(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		wants []string
+	}{
+		{"two columns", "| A | B |\n|---|---|\n| 1 | 2 |",
+			[]string{`\begin{tabular}{ll}`, `A & B \\`, `1 & 2 \\`}},
+		{"single column with pipes", "| A |\n|---|\n| 1 |",
+			[]string{`\begin{tabular}{l}`, `A \\`, `1 \\`}},
+		{"alignment separator without outer pipes", "A | B\n:---|---:\n1 | 2",
+			[]string{`\begin{tabular}{lr}`, `A & B \\`, `1 & 2 \\`}},
+		{"separator indented three spaces", "| A |\n   |---|\n| 1 |",
+			[]string{`\begin{tabular}{l}`, `A \\`}},
+		{"table interrupting a paragraph", "Intro text\n| A | B |\n|---|---|\n| 1 | 2 |",
+			[]string{"Intro text", `\begin{tabular}{ll}`, `A & B \\`}},
+		{"table after setext heading", "Results\n---\n\n| A | B |\n|---|---|\n| 1 | 2 |",
+			[]string{`\subsection{Results}`, `\begin{tabular}{ll}`, `1 & 2 \\`}},
+		{"table before setext heading", "| A |\n|---|\n| 1 |\n\nNext\n---",
+			[]string{`\begin{tabular}{l}`, `\subsection{Next}`}},
+	}
+	for _, ext := range []transpiler.Extension{transpiler.ExtTables, transpiler.ExtAll} {
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				got := transpile(t, tc.input, ext)
+				assertInOrder(t, got, tc.wants...)
+				if strings.Contains(got, `\subsection{Intro text}`) {
+					t.Errorf("paragraph text before a table became a heading\ngot:\n%s", got)
+				}
+			})
+		}
+	}
+}
+
+func TestSetextHeadingInsideBlockQuote(t *testing.T) {
+	got := transpile(t, "> Title\n> ---\n>\n> Body.", transpiler.ExtAll)
+	assertInOrder(t, got, `\begin{quote}`, `\subsection{Title}`, "Body.", `\end{quote}`)
+	if strings.Contains(got, `\begin{tabular}`) {
+		t.Errorf("quoted setext heading became a table\ngot:\n%s", got)
+	}
+}
+
+// TestThematicBreakClosesBlockQuote covers CommonMark 4.3: a setext underline
+// cannot be a lazy continuation line, so `---` below a quoted paragraph ends
+// the quote and renders as a rule outside it.
+func TestThematicBreakClosesBlockQuote(t *testing.T) {
+	got := transpile(t, "> Quoted\n---", transpiler.ExtAll)
+	assertInOrder(t, got, `\begin{quote}`, "Quoted", `\end{quote}`, `\noindent\rule`)
+	for _, bad := range []string{`\subsection{`, `\begin{tabular}`} {
+		if strings.Contains(got, bad) {
+			t.Errorf("unexpected %q\ngot:\n%s", bad, got)
+		}
+	}
+}
+
+// TestDefinitionBlockTakesPrecedenceOverSetextUnderline documents a deliberate
+// precedence choice: an exact `---` that opens a valid definition block is the
+// block delimiter even directly below a paragraph line, so documents that place
+// their definition block right after text keep working. Only an exact `---`
+// followed by recognised entries and a closing `---` qualifies.
+func TestDefinitionBlockTakesPrecedenceOverSetextUnderline(t *testing.T) {
+	src := "Intro line\n---\nC#01:doe2023\n---\n\nSee [C#01]."
+	got := transpile(t, src, transpiler.ExtCitations)
+	assertInOrder(t, got, "Intro line", `See~\cite{doe2023}.`)
+	for _, bad := range []string{`\subsection{`, "C#01", `\noindent\rule`} {
+		if strings.Contains(got, bad) {
+			t.Errorf("unexpected %q\ngot:\n%s", bad, got)
+		}
+	}
+}
+
+func TestSetextHeadingSequence(t *testing.T) {
+	src := "Document\n========\n\nIntro paragraph.\n\nSection\n-------\n\nBody paragraph."
+	got := transpile(t, src, transpiler.ExtAll)
+	assertInOrder(t, got,
+		`\section{Document}`,
+		"Intro paragraph.",
+		`\subsection{Section}`,
+		"Body paragraph.",
+	)
+}

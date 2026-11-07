@@ -187,8 +187,11 @@ func (p *blockParser) parse() *ast.Document {
 		}
 		if bqOpen {
 			// Lazy continuation: non-blank line continues a blockquote paragraph
-			// Only if the last thing in bqLines was a non-blank paragraph line
-			if len(bqLines) > 0 && !isBlankLine([]byte(bqLines[len(bqLines)-1])) {
+			// Only if the last thing in bqLines was a non-blank paragraph line.
+			// A thematic break is never a lazy continuation (CommonMark 4.3):
+			// `> Foo` followed by `---` closes the quote and yields a rule rather
+			// than a quoted setext heading.
+			if len(bqLines) > 0 && !isBlankLine([]byte(bqLines[len(bqLines)-1])) && !isThematicBreak(content) {
 				bqLines = append(bqLines, string(content))
 				continue
 			}
@@ -212,6 +215,25 @@ func (p *blockParser) parse() *ast.Document {
 			}
 		}
 
+		// ── Setext heading (underline following a paragraph) ──────────────────
+		// Must run before the thematic-break and table checks: when a paragraph
+		// is open, a `---` line is its underline (CommonMark 4.1 and 4.3), not
+		// a rule and not a GFM delimiter row.
+		if para != nil {
+			if level := setextHeadingLevel(content); level > 0 {
+				raw := strings.TrimSpace(strings.Join(paraLines, "\n"))
+				h := ast.NewHeading(paraPos, level)
+				inlines := parseInline(raw, paraPos, p.ext, p.refs.citations, p.refs.figures, p.refs.tables)
+				for _, n := range inlines {
+					ast.AppendChild(h, n)
+				}
+				p.appendToTop(h)
+				para = nil
+				paraLines = nil
+				continue
+			}
+		}
+
 		// ── Thematic break ────────────────────────────────────────────────────
 		if isThematicBreak(content) {
 			flushParagraph()
@@ -231,26 +253,6 @@ func (p *blockParser) parse() *ast.Document {
 			}
 			p.appendToTop(h)
 			continue
-		}
-
-		// ── Setext heading (underline following a paragraph) ──────────────────
-		if para != nil {
-			if isSetextUnderline(content) {
-				level := 1
-				if content[0] == '-' {
-					level = 2
-				}
-				raw := strings.Join(paraLines, "\n")
-				h := ast.NewHeading(paraPos, level)
-				inlines := parseInline(raw, paraPos, p.ext, p.refs.citations, p.refs.figures, p.refs.tables)
-				for _, n := range inlines {
-					ast.AppendChild(h, n)
-				}
-				p.appendToTop(h)
-				para = nil
-				paraLines = nil
-				continue
-			}
 		}
 
 		// ── Fenced code block (opening) ───────────────────────────────────────
@@ -367,23 +369,37 @@ func (p *blockParser) appendToTop(n ast.Node) {
 	ast.AppendChild(top, n)
 }
 
-// isSetextUnderline returns true if content is a setext heading underline
-// (`===` or `---` with optional trailing whitespace).
-func isSetextUnderline(content []byte) bool {
-	s := bytes.TrimRight(content, " \t")
+// setextHeadingLevel returns 1 for a `===` underline, 2 for a `---` underline,
+// and 0 when content is not a setext heading underline. An underline is a run
+// of one marker character indented at most three spaces, optionally followed
+// by whitespace (CommonMark 4.3). Four or more spaces of indentation make the
+// line paragraph continuation text, never an underline.
+func setextHeadingLevel(content []byte) int {
+	if countLeadingChar(content, ' ') > 3 {
+		return 0
+	}
+	s := bytes.TrimSpace(content)
 	if len(s) == 0 {
-		return false
+		return 0
 	}
 	ch := s[0]
 	if ch != '=' && ch != '-' {
-		return false
+		return 0
 	}
 	for _, b := range s {
 		if b != ch {
-			return false
+			return 0
 		}
 	}
-	return true
+	if ch == '=' {
+		return 1
+	}
+	return 2
+}
+
+// isSetextUnderline reports whether content is a setext heading underline.
+func isSetextUnderline(content []byte) bool {
+	return setextHeadingLevel(content) > 0
 }
 
 // closingFence returns true if content is a valid closing fence.
@@ -429,6 +445,12 @@ func parseFenceOpening(content []byte) *fenceState {
 // separator row (`| :--- | :---: | ---: |`).
 func isTableSeparator(l *line) bool {
 	if l == nil {
+		return false
+	}
+	// A setext underline takes precedence over a delimiter row (cmark-gfm tries
+	// setext headings before its table extension), and an indented line is
+	// continuation text or code, never a delimiter row.
+	if l.indent() >= 4 || isSetextUnderline(l.content) {
 		return false
 	}
 	s := strings.TrimSpace(string(l.content))

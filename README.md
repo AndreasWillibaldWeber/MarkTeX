@@ -80,7 +80,7 @@ echo "# Hello" | ./bin/marktex
 | `##### Heading` | `\subparagraph{Heading}` |
 | `###### Heading` | `\textbf{Heading}` |
 
-Setext headings (`===` underline → `\section`, `---` underline → `\subsection`) are also supported.
+Setext headings (`===` underline → `\section`, `---` underline → `\subsection`) are also supported. A `---` line directly below paragraph text is always read as a setext underline, never as a thematic break or a table separator row; put a blank line between the text and the `---` to get a rule.
 
 ---
 
