@@ -28,6 +28,10 @@ type inlineParser struct {
 	citationRefs map[string]string
 	figureRefs   map[string]string
 	tableRefs    map[string]string
+
+	// delims is the CommonMark delimiter stack for the emphasis scopes that
+	// are currently open (the whole input, and each link text inside it).
+	delims []*delimiter
 }
 
 func (p *inlineParser) parse() []ast.Node {
@@ -35,7 +39,7 @@ func (p *inlineParser) parse() []ast.Node {
 	for p.pos < len(p.src) {
 		nodes = append(nodes, p.parseOne()...)
 	}
-	return resolveLineBreaks(mergeTextNodes(nodes))
+	return p.finishInline(nodes, 0)
 }
 
 // parseOne parses the next inline element starting at p.pos and returns it.
@@ -78,9 +82,7 @@ func (p *inlineParser) parseOne() []ast.Node {
 			return nodes
 		}
 	case ch == '*' || ch == '_':
-		if nodes, ok := p.parseEmphasis(ch); ok {
-			return nodes
-		}
+		return p.parseDelimiterRun(ch)
 	case p.ext.Has(ExtStrikethrough) && ch == '~' && p.pos+1 < len(p.src) && p.src[p.pos+1] == '~':
 		if nodes, ok := p.parseStrikethrough(); ok {
 			return nodes
@@ -224,6 +226,7 @@ func (p *inlineParser) parseLink() ([]ast.Node, bool) {
 // closing byte 'close'. Consumes the closing byte.
 func (p *inlineParser) parseInlineContent(close byte) ([]ast.Node, bool) {
 	save := p.pos
+	bottom := len(p.delims) // link text is a separate emphasis scope (CommonMark 6.3)
 	var nodes []ast.Node
 	depth := 0
 	for p.pos < len(p.src) {
@@ -238,7 +241,7 @@ func (p *inlineParser) parseInlineContent(close byte) ([]ast.Node, bool) {
 				p.pos++
 			} else {
 				p.pos++ // consume ']'
-				return resolveLineBreaks(mergeTextNodes(nodes)), true
+				return p.finishInline(nodes, bottom), true
 			}
 		} else {
 			more := p.parseOne()
@@ -246,6 +249,7 @@ func (p *inlineParser) parseInlineContent(close byte) ([]ast.Node, bool) {
 		}
 	}
 	p.pos = save
+	p.delims = p.delims[:bottom]
 	return nil, false
 }
 
@@ -376,124 +380,201 @@ func (p *inlineParser) parseLinkTitle() (string, bool) {
 	return "", false
 }
 
-// parseEmphasis handles `*`, `**`, `***`, `_`, `__`, `___`.
-// This is a simplified (non-CommonMark-compliant) greedy implementation that
-// handles the common cases correctly. The full delimiter-stack algorithm is
-// more complex and can be added in a future iteration.
-func (p *inlineParser) parseEmphasis(delim byte) ([]ast.Node, bool) {
-	nodePos := p.posAt(p.pos)
-	save := p.pos
+// ─── Emphasis: CommonMark delimiter algorithm (spec 6.2 and appendix A) ─────
 
-	// Count opening delimiters
-	n := 0
-	for p.pos < len(p.src) && p.src[p.pos] == delim {
-		n++
-		p.pos++
-	}
-
-	// Underscore delimiters: check left-flanking rule
-	if delim == '_' {
-		// Must not be followed by an alphanumeric (right-flanking would mean it's
-		// inside a word like `foo_bar_baz`)
-		if p.pos < len(p.src) {
-			r, _ := utf8.DecodeRuneInString(p.src[p.pos:])
-			if unicode.IsLetter(r) || unicode.IsDigit(r) {
-				p.pos = save
-				return nil, false
-			}
-		}
-	}
-
-	level := n
-	if level > 3 {
-		// More than 3 delimiters: treat excess as text, then parse emphasis
-		p.pos = save + 3
-		level = 3
-	}
-
-	// Now consume inner content until we find the matching closing delimiter run
-	innerSrc, ok := p.findClosingDelimiters(delim, level)
-	if !ok {
-		p.pos = save
-		return nil, false
-	}
-
-	// Parse the inner content recursively
-	innerNodes := parseInline(innerSrc, nodePos, p.ext, p.citationRefs, p.figureRefs, p.tableRefs)
-
-	switch level {
-	case 1:
-		em := ast.NewEmphasis(nodePos)
-		for _, n := range innerNodes {
-			ast.AppendChild(em, n)
-		}
-		return []ast.Node{em}, true
-	case 2:
-		st := ast.NewStrong(nodePos)
-		for _, n := range innerNodes {
-			ast.AppendChild(st, n)
-		}
-		return []ast.Node{st}, true
-	default: // 3
-		se := ast.NewStrongEmphasis(nodePos)
-		for _, n := range innerNodes {
-			ast.AppendChild(se, n)
-		}
-		return []ast.Node{se}, true
-	}
+// delimiter is a run of `*` or `_` that may open or close emphasis. The run
+// stays in the node list as plain text until processEmphasis decides.
+type delimiter struct {
+	node     *ast.Text
+	char     byte
+	length   int // delimiters not yet consumed
+	origLen  int // length of the run in the source, for the rule of three
+	canOpen  bool
+	canClose bool
 }
 
-// findClosingDelimiters searches forward for a run of exactly n delimiter
-// characters followed by a non-delimiter (or end of line). Returns the
-// content between the delimiters and true on success.
-func (p *inlineParser) findClosingDelimiters(delim byte, n int) (string, bool) {
+// parseDelimiterRun consumes a run of `*` or `_`, emits it as text and records
+// it on the delimiter stack when the flanking rules allow it to open or close.
+func (p *inlineParser) parseDelimiterRun(ch byte) []ast.Node {
 	start := p.pos
-	for p.pos < len(p.src) {
-		if p.src[p.pos] == '\\' && p.pos+1 < len(p.src) {
-			p.pos += 2
-			continue
-		}
-		if p.src[p.pos] == '`' {
-			// Skip over code span to avoid matching delimiters inside it
-			save := p.pos
-			tmp := &inlineParser{src: p.src, basePos: p.basePos, ext: p.ext, pos: p.pos}
-			nodes := tmp.parseCodeSpan()
-			if len(nodes) > 0 {
-				if _, ok := nodes[0].(*ast.CodeSpan); ok {
-					p.pos = tmp.pos
-					continue
-				}
-			}
-			p.pos = save
-		}
-		if p.src[p.pos] == delim {
-			closeStart := p.pos
-			m := 0
-			for p.pos < len(p.src) && p.src[p.pos] == delim {
-				m++
-				p.pos++
-			}
-			if m == n {
-				// For underscore: closing run must be right-flanking
-				if delim == '_' && p.pos < len(p.src) {
-					r, _ := utf8.DecodeRuneInString(p.src[p.pos:])
-					if unicode.IsLetter(r) || unicode.IsDigit(r) {
-						// Not right-flanking; continue
-						continue
-					}
-				}
-				return p.src[start:closeStart], true
-			}
-			// Wrong number of delimiters; continue
-			continue
-		}
-		if p.src[p.pos] == '\n' {
-			// Emphasis doesn't span paragraphs
-			break
-		}
+	for p.pos < len(p.src) && p.src[p.pos] == ch {
 		p.pos++
 	}
-	return "", false
+	node := ast.NewText(p.posAt(start), p.src[start:p.pos])
+
+	before, after := ' ', ' ' // start and end of input count as whitespace
+	if start > 0 {
+		before, _ = utf8.DecodeLastRuneInString(p.src[:start])
+	}
+	if p.pos < len(p.src) {
+		after, _ = utf8.DecodeRuneInString(p.src[p.pos:])
+	}
+	canOpen, canClose := delimiterCanOpenClose(ch, before, after)
+	if canOpen || canClose {
+		n := p.pos - start
+		p.delims = append(p.delims, &delimiter{node: node, char: ch, length: n, origLen: n, canOpen: canOpen, canClose: canClose})
+	}
+	return []ast.Node{node}
+}
+
+// delimiterCanOpenClose applies the left-/right-flanking definitions of
+// CommonMark 6.2 to a run of ch surrounded by the runes before and after.
+// `*` opens when left-flanking and closes when right-flanking; `_` additionally
+// refuses to open or close inside a word unless punctuation is adjacent.
+func delimiterCanOpenClose(ch byte, before, after rune) (canOpen, canClose bool) {
+	leftFlanking := !unicode.IsSpace(after) &&
+		(!isUnicodePunctuation(after) || unicode.IsSpace(before) || isUnicodePunctuation(before))
+	rightFlanking := !unicode.IsSpace(before) &&
+		(!isUnicodePunctuation(before) || unicode.IsSpace(after) || isUnicodePunctuation(after))
+	if ch == '_' {
+		return leftFlanking && (!rightFlanking || isUnicodePunctuation(before)),
+			rightFlanking && (!leftFlanking || isUnicodePunctuation(after))
+	}
+	return leftFlanking, rightFlanking
+}
+
+// finishInline closes an emphasis scope: the delimiters pushed since bottom
+// are matched, the scope is popped, adjacent text is merged and line breaks
+// are resolved.
+func (p *inlineParser) finishInline(nodes []ast.Node, bottom int) []ast.Node {
+	nodes = processEmphasis(nodes, p.delims[bottom:])
+	p.delims = p.delims[:bottom]
+	return finalizeInline(nodes)
+}
+
+func finalizeInline(nodes []ast.Node) []ast.Node {
+	return resolveLineBreaks(mergeTextNodes(nodes))
+}
+
+// processEmphasis is the "process emphasis" procedure of the CommonMark spec
+// for one scope. Closers are visited from the bottom of the stack upwards.
+// Each looks back for the nearest opener it may match and wraps the nodes in
+// between in an Emphasis (one delimiter) or Strong (two) node, repeating while
+// it has delimiters left. Unmatched delimiters remain literal text.
+func processEmphasis(nodes []ast.Node, scope []*delimiter) []ast.Node {
+	stack := append([]*delimiter(nil), scope...)
+	for i := 0; i < len(stack); {
+		closer := stack[i]
+		if !closer.canClose {
+			i++
+			continue
+		}
+		o := i - 1
+		for o >= 0 && !canMatch(stack[o], closer) {
+			o--
+		}
+		if o < 0 {
+			if closer.canOpen {
+				i++
+			} else {
+				stack = removeDelimiter(stack, i)
+			}
+			continue
+		}
+		opener := stack[o]
+		oi := indexOfNode(nodes, opener.node)
+		ci := indexOfNode(nodes, closer.node)
+		if oi < 0 || ci <= oi {
+			stack = removeDelimiter(stack, i)
+			continue
+		}
+
+		use := 1
+		if opener.length >= 2 && closer.length >= 2 {
+			use = 2
+		}
+		children := finalizeInline(append([]ast.Node(nil), nodes[oi+1:ci]...))
+		wrapper := newEmphasisNode(use, opener.node.Position(), children)
+		rebuilt := make([]ast.Node, 0, len(nodes)-(ci-oi)+2)
+		rebuilt = append(rebuilt, nodes[:oi+1]...)
+		rebuilt = append(rebuilt, wrapper)
+		nodes = append(rebuilt, nodes[ci:]...)
+
+		opener.length -= use
+		closer.length -= use
+		opener.node.Value = opener.node.Value[:opener.length]
+		closer.node.Value = closer.node.Value[:closer.length]
+
+		// Delimiters between the pair now live inside the new node.
+		stack = append(stack[:o+1], stack[i:]...)
+		i = o + 1
+		if closer.length == 0 {
+			nodes = removeNode(nodes, closer.node)
+			stack = removeDelimiter(stack, i)
+		}
+		if opener.length == 0 {
+			nodes = removeNode(nodes, opener.node)
+			stack = removeDelimiter(stack, o)
+			i--
+		}
+	}
+	return nodes
+}
+
+// canMatch reports whether opener can pair with closer: same character, the
+// opener may open, and the rule of three holds (CommonMark 6.2, rules 9 and
+// 10): when either delimiter can both open and close, the sum of the two run
+// lengths must not be a multiple of three unless both lengths are.
+func canMatch(opener, closer *delimiter) bool {
+	if opener.char != closer.char || !opener.canOpen {
+		return false
+	}
+	if opener.canClose || closer.canOpen {
+		sum := opener.origLen + closer.origLen
+		if sum%3 == 0 && (opener.origLen%3 != 0 || closer.origLen%3 != 0) {
+			return false
+		}
+	}
+	return true
+}
+
+// newEmphasisNode wraps children in Emphasis (use 1) or Strong (use 2).
+// Emphasis around a lone Strong, or Strong around a lone Emphasis, collapses
+// into StrongEmphasis so that ***text*** keeps rendering as \textbf{\textit{…}}.
+func newEmphasisNode(use int, pos ast.Pos, children []ast.Node) ast.Node {
+	if len(children) == 1 {
+		switch inner := children[0].(type) {
+		case *ast.Strong:
+			if use == 1 {
+				return withChildren(ast.NewStrongEmphasis(pos), inner.Children())
+			}
+		case *ast.Emphasis:
+			if use == 2 {
+				return withChildren(ast.NewStrongEmphasis(pos), inner.Children())
+			}
+		}
+	}
+	if use == 2 {
+		return withChildren(ast.NewStrong(pos), children)
+	}
+	return withChildren(ast.NewEmphasis(pos), children)
+}
+
+func withChildren(parent ast.Node, children []ast.Node) ast.Node {
+	for _, c := range children {
+		ast.AppendChild(parent, c)
+	}
+	return parent
+}
+
+func indexOfNode(nodes []ast.Node, target ast.Node) int {
+	for i, n := range nodes {
+		if n == target {
+			return i
+		}
+	}
+	return -1
+}
+
+func removeNode(nodes []ast.Node, target ast.Node) []ast.Node {
+	if i := indexOfNode(nodes, target); i >= 0 {
+		return append(nodes[:i], nodes[i+1:]...)
+	}
+	return nodes
+}
+
+func removeDelimiter(stack []*delimiter, i int) []*delimiter {
+	return append(stack[:i], stack[i+1:]...)
 }
 
 // parseStrikethrough handles `~~text~~`.

@@ -29,6 +29,14 @@ func kinds(nodes []ast.Node) string {
 			b.WriteString("ESC")
 		case *ast.CodeSpan:
 			fmt.Fprintf(&b, "C(%s)", n.Literal)
+		case *ast.Emphasis:
+			fmt.Fprintf(&b, "E[%s]", kinds(n.Children()))
+		case *ast.Strong:
+			fmt.Fprintf(&b, "S[%s]", kinds(n.Children()))
+		case *ast.StrongEmphasis:
+			fmt.Fprintf(&b, "SE[%s]", kinds(n.Children()))
+		case *ast.Link:
+			fmt.Fprintf(&b, "L[%s]", kinds(n.Children()))
 		case *ast.Math:
 			if n.Display {
 				fmt.Fprintf(&b, "DM(%s)", n.Literal)
@@ -190,6 +198,102 @@ func TestIndexUnescaped(t *testing.T) {
 	for _, tc := range tests {
 		if got := indexUnescaped(tc.src, tc.from, tc.sep); got != tc.want {
 			t.Errorf("indexUnescaped(%q, %d, %q) = %d, want %d", tc.src, tc.from, tc.sep, got, tc.want)
+		}
+	}
+}
+
+// TestParseInlineEmphasisStructure checks the node tree the delimiter
+// algorithm builds, including the StrongEmphasis collapse and that merging
+// and line-break resolution also run inside emphasis.
+func TestParseInlineEmphasisStructure(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{"***testing****without***spaces**", "SE[T(testing)] E[T(without)] S[T(spaces)]"},
+		{"*foo **bar** baz*", "E[T(foo ) S[T(bar)] T( baz)]"},
+		{"**foo*", "T(*) E[T(foo)]"},
+		{"a * b * c", "T(a * b * c)"},
+		{"*foo\nbar*", "E[T(foo) SB T(bar)]"},
+		{"*a  \nb*", "E[T(a) HB T(b)]"},
+		{"***x***", "SE[T(x)]"},
+		{"**_x_**", "SE[T(x)]"},
+		{"*foo [bar*](/u)", "T(*foo ) L[T(bar*)]"},
+		{"[*foo](/u)*", "L[T(*foo)] T(*)"},
+		{"*[foo](/u)*", "E[L[T(foo)]]"},
+		{"foo_bar_baz", "T(foo_bar_baz)"},
+		{"_foo_", "E[T(foo)]"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.in, func(t *testing.T) {
+			got := kinds(parseInline(tc.in, ast.Pos{}, ExtAll, nil, nil, nil))
+			if got != tc.want {
+				t.Errorf("parseInline(%q)\ngot  %s\nwant %s", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestDelimiterCanOpenClose covers the flanking definitions of CommonMark 6.2
+// for both delimiter characters.
+func TestDelimiterCanOpenClose(t *testing.T) {
+	tests := []struct {
+		ch                byte
+		before, after     rune
+		canOpen, canClose bool
+	}{
+		{'*', ' ', 'a', true, false},
+		{'*', 'a', ' ', false, true},
+		{'*', 'a', 'b', true, true},
+		{'*', ' ', ' ', false, false},
+		{'*', '\n', 'a', true, false},
+		{'*', 'a', '"', false, true},
+		{'*', '"', 'a', true, false},
+		{'*', '"', '"', true, true},
+		{'*', ' ', '"', true, false},
+		{'*', '"', ' ', false, true},
+		{'*', 'я', 'б', true, true},
+		{'_', ' ', 'a', true, false},
+		{'_', 'a', ' ', false, true},
+		{'_', 'a', 'b', false, false},
+		{'_', 'я', 'б', false, false},
+		{'_', '5', '6', false, false},
+		{'_', '-', '(', true, true},
+		{'_', 'a', '"', false, true},
+		{'_', '"', 'a', true, false},
+	}
+	for _, tc := range tests {
+		open, cls := delimiterCanOpenClose(tc.ch, tc.before, tc.after)
+		if open != tc.canOpen || cls != tc.canClose {
+			t.Errorf("delimiterCanOpenClose(%q, %q, %q) = (%v, %v), want (%v, %v)",
+				tc.ch, tc.before, tc.after, open, cls, tc.canOpen, tc.canClose)
+		}
+	}
+}
+
+// TestCanMatchRuleOfThree exercises the "multiple of three" rule in isolation.
+func TestCanMatchRuleOfThree(t *testing.T) {
+	d := func(ch byte, n int, open, cls bool) *delimiter {
+		return &delimiter{char: ch, length: n, origLen: n, canOpen: open, canClose: cls}
+	}
+	tests := []struct {
+		name           string
+		opener, closer *delimiter
+		want           bool
+	}{
+		{"plain pair", d('*', 1, true, false), d('*', 1, false, true), true},
+		{"different characters", d('*', 1, true, false), d('_', 1, false, true), false},
+		{"opener cannot open", d('*', 1, false, true), d('*', 1, false, true), false},
+		{"sum three, closer can open", d('*', 1, true, false), d('*', 2, true, true), false},
+		{"sum three, opener can close", d('*', 2, true, true), d('*', 1, false, true), false},
+		{"sum three, neither dual", d('*', 1, true, false), d('*', 2, false, true), true},
+		{"sum six, both multiples of three", d('*', 3, true, true), d('*', 3, true, true), true},
+		{"sum seven, dual closer", d('*', 3, true, false), d('*', 4, true, true), true},
+		{"sum nine, not both multiples", d('*', 4, true, true), d('*', 5, true, true), false},
+	}
+	for _, tc := range tests {
+		if got := canMatch(tc.opener, tc.closer); got != tc.want {
+			t.Errorf("%s: canMatch = %v, want %v", tc.name, got, tc.want)
 		}
 	}
 }

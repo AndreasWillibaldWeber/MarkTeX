@@ -1435,3 +1435,200 @@ func TestShallowHeadingsHaveNoRunInGuard(t *testing.T) {
 		t.Errorf("run-in guard applied to a display heading\ngot: %q", got)
 	}
 }
+
+// ── Emphasis delimiter runs (issue #3) ───────────────────────────────────────
+
+// TestEmphasisDelimiterRunsIssue03 reproduces the exact report from issue #3.
+func TestEmphasisDelimiterRunsIssue03(t *testing.T) {
+	got := transpile(t, "***testing****without***spaces**\n", transpiler.ExtAll)
+	want := "\\textbf{\\textit{testing}}\\textit{without}\\textbf{spaces}\n\n"
+	if got != want {
+		t.Errorf("want exactly %q\ngot:        %q", want, got)
+	}
+}
+
+// TestEmphasisCommonMarkSpec runs the examples of CommonMark 6.2 (emphasis
+// and strong emphasis, rules 1 to 17) through the transpiler and compares the
+// full output. Expected values are the spec's HTML translated to LaTeX, with
+// `***x***` collapsed to \textbf{\textit{x}} as documented in the README.
+func TestEmphasisCommonMarkSpec(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		// Rule 1: * opens when left-flanking.
+		{"*foo bar*", `\textit{foo bar}`},
+		{"a * foo bar*", `a * foo bar*`},
+		{`a*"foo"*`, `a*"foo"*`},
+		{"x * a *", `x * a *`},
+		{"foo*bar*", `foo\textit{bar}`},
+		{"5*6*78", `5\textit{6}78`},
+		// Rule 2: _ opens when left-flanking and not inside a word.
+		{"_foo bar_", `\textit{foo bar}`},
+		{"_ foo bar_", `\_ foo bar\_`},
+		{`a_"foo"_`, `a\_"foo"\_`},
+		{"foo_bar_", `foo\_bar\_`},
+		{"5_6_78", `5\_6\_78`},
+		{"пристаням_стремятся_", `пристаням\_стремятся\_`},
+		{`aa_"bb"_cc`, `aa\_"bb"\_cc`},
+		{"foo-_(bar)_", `foo-\textit{(bar)}`},
+		// Rule 3: * closes when right-flanking.
+		{"_foo*", `\_foo*`},
+		{"*foo bar *", `*foo bar *`},
+		{"*(*foo)", `*(*foo)`},
+		{"*(*foo*)*", `\textit{(\textit{foo})}`},
+		{"*foo*bar", `\textit{foo}bar`},
+		// Rule 4: _ closes when right-flanking and not inside a word.
+		{"_foo bar _", `\_foo bar \_`},
+		{"_(_foo)", `\_(\_foo)`},
+		{"_(_foo_)_", `\textit{(\textit{foo})}`},
+		{"_foo_bar", `\_foo\_bar`},
+		{"_пристаням_стремятся", `\_пристаням\_стремятся`},
+		{"_foo_bar_baz_", `\textit{foo\_bar\_baz}`},
+		{"_(bar)_.", `\textit{(bar)}.`},
+		// Rules 5 and 6: ** and __ open.
+		{"**foo bar**", `\textbf{foo bar}`},
+		{"** foo bar**", `** foo bar**`},
+		{`a**"foo"**`, `a**"foo"**`},
+		{"foo**bar**", `foo\textbf{bar}`},
+		{"__foo bar__", `\textbf{foo bar}`},
+		{"__ foo bar__", `\_\_ foo bar\_\_`},
+		{`a__"foo"__`, `a\_\_"foo"\_\_`},
+		{"foo__bar__", `foo\_\_bar\_\_`},
+		{"5__6__78", `5\_\_6\_\_78`},
+		{"__foo, __bar__, baz__", `\textbf{foo, \textbf{bar}, baz}`},
+		{"foo-__(bar)__", `foo-\textbf{(bar)}`},
+		// Rules 7 and 8: ** and __ close.
+		{"**foo bar **", `**foo bar **`},
+		{"**(**foo)", `**(**foo)`},
+		{"*(**foo**)*", `\textit{(\textbf{foo})}`},
+		{"**Gomphocarpus (*Gomphocarpus physocarpus*, syn.\n*Asclepias physocarpa*)**",
+			`\textbf{Gomphocarpus (\textit{Gomphocarpus physocarpus}, syn. \textit{Asclepias physocarpa})}`},
+		{`**foo "*bar*" foo**`, `\textbf{foo "\textit{bar}" foo}`},
+		{"**foo**bar", `\textbf{foo}bar`},
+		{"__foo bar __", `\_\_foo bar \_\_`},
+		{"__(__foo)", `\_\_(\_\_foo)`},
+		{"_(__foo__)_", `\textit{(\textbf{foo})}`},
+		{"__foo__bar", `\_\_foo\_\_bar`},
+		{"__foo__bar__baz__", `\textbf{foo\_\_bar\_\_baz}`},
+		{"__(bar)__.", `\textbf{(bar)}.`},
+		// Rule 9: nesting inside emphasis.
+		{"*foo [bar](/url)*", `\textit{foo \href{/url}{bar}}`},
+		{"*foo\nbar*", `\textit{foo bar}`},
+		{"_foo __bar__ baz_", `\textit{foo \textbf{bar} baz}`},
+		{"_foo _bar_ baz_", `\textit{foo \textit{bar} baz}`},
+		{"__foo_ bar_", `\textit{\textit{foo} bar}`},
+		{"*foo *bar**", `\textit{foo \textit{bar}}`},
+		{"*foo **bar** baz*", `\textit{foo \textbf{bar} baz}`},
+		{"*foo**bar**baz*", `\textit{foo\textbf{bar}baz}`},
+		{"*foo**bar*", `\textit{foo**bar}`},
+		{"***foo** bar*", `\textit{\textbf{foo} bar}`},
+		{"*foo **bar***", `\textit{foo \textbf{bar}}`},
+		{"*foo**bar***", `\textit{foo\textbf{bar}}`},
+		{"foo***bar***baz", `foo\textbf{\textit{bar}}baz`},
+		{"foo******bar*********baz", `foo\textbf{\textbf{\textbf{bar}}}***baz`},
+		{"*foo **bar *baz* bim** bop*", `\textit{foo \textbf{bar \textit{baz} bim} bop}`},
+		{"*foo [*bar*](/url)*", `\textit{foo \href{/url}{\textit{bar}}}`},
+		{"** is not an empty emphasis", `** is not an empty emphasis`},
+		{"**** is not an empty strong emphasis", `**** is not an empty strong emphasis`},
+		// Rule 10: nesting inside strong emphasis.
+		{"**foo [bar](/url)**", `\textbf{foo \href{/url}{bar}}`},
+		{"**foo\nbar**", `\textbf{foo bar}`},
+		{"__foo _bar_ baz__", `\textbf{foo \textit{bar} baz}`},
+		{"__foo __bar__ baz__", `\textbf{foo \textbf{bar} baz}`},
+		{"____foo__ bar__", `\textbf{\textbf{foo} bar}`},
+		{"**foo **bar****", `\textbf{foo \textbf{bar}}`},
+		{"**foo *bar* baz**", `\textbf{foo \textit{bar} baz}`},
+		{"**foo*bar*baz**", `\textbf{foo\textit{bar}baz}`},
+		{"***foo* bar**", `\textbf{\textit{foo} bar}`},
+		{"**foo *bar***", `\textbf{foo \textit{bar}}`},
+		{"**foo *bar **baz**\nbim* bop**", `\textbf{foo \textit{bar \textbf{baz} bim} bop}`},
+		{"**foo [*bar*](/url)**", `\textbf{foo \href{/url}{\textit{bar}}}`},
+		{"__ is not an empty emphasis", `\_\_ is not an empty emphasis`},
+		{"____ is not an empty strong emphasis", `\_\_\_\_ is not an empty strong emphasis`},
+		// Rules 11 and 12: unmatched delimiters stay literal.
+		{"foo ***", `foo ***`},
+		{`foo *\**`, `foo \textit{*}`},
+		{"foo *_*", `foo \textit{\_}`},
+		{"foo *****", `foo *****`},
+		{`foo **\***`, `foo \textbf{*}`},
+		{"foo **_**", `foo \textbf{\_}`},
+		{"**foo*", `*\textit{foo}`},
+		{"*foo**", `\textit{foo}*`},
+		{"***foo**", `*\textbf{foo}`},
+		{"****foo*", `***\textit{foo}`},
+		{"**foo***", `\textbf{foo}*`},
+		{"*foo****", `\textit{foo}***`},
+		{"foo ___", `foo \_\_\_`},
+		{`foo _\__`, `foo \textit{\_}`},
+		{"foo _*_", `foo \textit{*}`},
+		{"foo _____", `foo \_\_\_\_\_`},
+		{`foo __\___`, `foo \textbf{\_}`},
+		{"foo __*__", `foo \textbf{*}`},
+		{"__foo_", `\_\textit{foo}`},
+		{"_foo__", `\textit{foo}\_`},
+		{"___foo__", `\_\textbf{foo}`},
+		{"____foo_", `\_\_\_\textit{foo}`},
+		{"__foo___", `\textbf{foo}\_`},
+		{"_foo____", `\textit{foo}\_\_\_`},
+		// Rules 13 and 14: nested strong and emphasis.
+		{"**foo**", `\textbf{foo}`},
+		{"*_foo_*", `\textit{\textit{foo}}`},
+		{"__foo__", `\textbf{foo}`},
+		{"_*foo*_", `\textit{\textit{foo}}`},
+		{"****foo****", `\textbf{\textbf{foo}}`},
+		{"____foo____", `\textbf{\textbf{foo}}`},
+		{"******foo******", `\textbf{\textbf{\textbf{foo}}}`},
+		{"***foo***", `\textbf{\textit{foo}}`},
+		{"_____foo_____", `\textbf{\textit{\textbf{foo}}}`},
+		// Rules 15 and 16: overlapping and unbalanced runs.
+		{"*foo _bar* baz_", `\textit{foo \_bar} baz\_`},
+		{"*foo __bar *baz bim__ bam*", `\textit{foo \textbf{bar *baz bim} bam}`},
+		{"**foo **bar baz**", `**foo \textbf{bar baz}`},
+		{"*foo *bar baz*", `*foo \textit{bar baz}`},
+		// Rule 17: code spans and links take precedence.
+		{"*[bar*](/url)", `*\href{/url}{bar*}`},
+		{"_foo [bar_](/url)", `\_foo \href{/url}{bar\_}`},
+		{"*a `*`*", `\textit{a \texttt{*}}`},
+		{"_a `_`_", `\textit{a \texttt{\_}}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.in, func(t *testing.T) {
+			got := transpile(t, tc.in, transpiler.ExtAll)
+			if want := tc.want + "\n\n"; got != want {
+				t.Errorf("input %q\nwant %q\ngot  %q", tc.in, want, got)
+			}
+		})
+	}
+}
+
+// TestEmphasisWithOtherInlineConstructs checks emphasis around and inside the
+// other inline nodes, where delimiter scopes and line-break handling meet.
+func TestEmphasisWithOtherInlineConstructs(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"hard break inside emphasis", "*a  \nb*", "\\textit{a\\\\\nb}"},
+		{"strikethrough inside emphasis", "*~~x~~*", `\textit{\sout{x}}`},
+		{"emphasis inside strikethrough", "~~*x*~~", `\sout{\textit{x}}`},
+		{"math inside emphasis", "*see $x^2$ here*", `\textit{see $x^2$ here}`},
+		{"escaped delimiter inside", `*foo\*bar*`, `\textit{foo*bar}`},
+		{"entity next to delimiter", "*&amp;*", `\textit{\&}`},
+		{"emphasis in heading", "## *x* and **y**", `\subsection{\textit{x} and \textbf{y}}`},
+		{"emphasis in list item", "- **b** and _i_", `\item \textbf{b} and \textit{i}`},
+		{"emphasis in table cell", "| a | b |\n|---|---|\n| *x* | __y__ |", `\textit{x} & \textbf{y} \\`},
+		{"emphasis in block quote", "> *q*", "\\begin{quote}\n\\textit{q}\n"},
+		{"image alt text not emphasised", "![*alt*](i.png)", `\includegraphics{i.png}`},
+		{"link text scope", "*foo [bar*](/u) baz*", `\textit{foo \href{/u}{bar*} baz}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := transpile(t, tc.input, transpiler.ExtAll)
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("missing %q\ngot: %q", tc.want, got)
+			}
+		})
+	}
+}

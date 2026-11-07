@@ -101,6 +101,8 @@ Setext headings (`===` underline → `\section`, `---` underline → `\subsectio
 | `$E=mc^2$` | `$E=mc^2$` (verbatim TeX math, extension `math`) |
 | `$$E=mc^2$$` | `\[E=mc^2\]` (display math, extension `math`) |
 
+Emphasis follows the CommonMark delimiter rules (left- and right-flanking runs and the rule of three), so adjacent runs such as `***a****b***c**` split into bold-italic, italic and bold, `_` never acts inside a word (`snake_case_name` stays literal), unmatched delimiters stay literal, and emphasis may span a soft line break.
+
 With the `math` extension (enabled by default) the content between dollar signs is passed to LaTeX unchanged; `amsmath` and `amssymb` are added to the standalone preamble. The opening `$` must be followed by a non-space character and the closing `$` must be preceded by one and must not be followed by a digit, so prices like `$20,000 and $30,000` stay literal text. Inline math must stay on one line and cannot contain a backtick; display math may span lines. Write `\$` for a literal dollar sign next to math, or disable the extension with `-no-ext math`.
 
 ---

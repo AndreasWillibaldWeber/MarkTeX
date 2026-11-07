@@ -1,0 +1,21 @@
+Adjacent runs: \textbf{\textit{testing}}\textit{without}\textbf{spaces} render as three spans.
+
+Underscores work too: \textit{italic}, \textbf{bold} and \textbf{\textit{both}}, while snake\_case\_name stays literal inside a word, as does 2 * 3 * 4 with spaces around the stars.
+
+Nesting: \textit{foo \textbf{bar} baz}, \textbf{foo \textit{bar} baz}, \textit{(\textit{inner})} and foo\textbf{\textit{bar}}baz.
+
+Emphasis may span a line \textit{like this one which continues} onto the next source line, and left-over delimiters such as *\textit{foo} keep their unmatched star. Code spans win: \textit{not \texttt{*} closed here} still is emphasis.
+
+\begin{itemize}
+  \item \textbf{bold item} with \textit{italic}
+  \item \texttt{code} then \textit{emphasis}
+\end{itemize}
+
+\begin{tabular}{ll}
+\toprule
+Column & Value \\
+\midrule
+\textit{a} & \textbf{b} \\
+\bottomrule
+\end{tabular}
+
