@@ -35,7 +35,7 @@ func (p *inlineParser) parse() []ast.Node {
 	for p.pos < len(p.src) {
 		nodes = append(nodes, p.parseOne()...)
 	}
-	return mergeTextNodes(nodes)
+	return resolveLineBreaks(mergeTextNodes(nodes))
 }
 
 // parseOne parses the next inline element starting at p.pos and returns it.
@@ -234,7 +234,7 @@ func (p *inlineParser) parseInlineContent(close byte) ([]ast.Node, bool) {
 				p.pos++
 			} else {
 				p.pos++ // consume ']'
-				return mergeTextNodes(nodes), true
+				return resolveLineBreaks(mergeTextNodes(nodes)), true
 			}
 		} else {
 			more := p.parseOne()
@@ -539,8 +539,9 @@ func (p *inlineParser) parseEntity() ([]ast.Node, bool) {
 	return []ast.Node{ast.NewEntity(nodePos, seq, r)}, true
 }
 
-// parseLineBreak handles `\n` within inline content.
-// Two trailing spaces before \n produce a HardBreak; otherwise SoftBreak.
+// parseLineBreak handles `\n` within inline content. It always emits a
+// SoftBreak; resolveLineBreaks later upgrades it to a HardBreak when two or
+// more spaces precede the line ending and strips the surrounding whitespace.
 func (p *inlineParser) parseLineBreak() []ast.Node {
 	nodePos := p.posAt(p.pos)
 	p.pos++ // consume '\n'
@@ -766,6 +767,67 @@ func (p *inlineParser) posAt(offset int) ast.Pos {
 }
 
 // mergeTextNodes collapses adjacent *ast.Text nodes into a single Text node.
+// resolveLineBreaks applies the CommonMark line-ending rules (6.7, 6.8) to a
+// merged inline sequence: whitespace before and after a line ending is
+// removed, two or more spaces before a soft break turn it into a hard break,
+// and a break with nothing after it is dropped because a hard break cannot end
+// a block (a trailing `\\` would also be a LaTeX error).
+func resolveLineBreaks(nodes []ast.Node) []ast.Node {
+	out := make([]ast.Node, 0, len(nodes))
+	for i := 0; i < len(nodes); i++ {
+		n := nodes[i]
+		if !isLineBreak(n) {
+			out = append(out, n)
+			continue
+		}
+
+		trailing := 0
+		if len(out) > 0 {
+			if t, ok := out[len(out)-1].(*ast.Text); ok {
+				trimmed := strings.TrimRight(t.Value, " \t")
+				trailing = len(t.Value) - len(trimmed)
+				if trimmed == "" {
+					out = out[:len(out)-1]
+				} else if trailing > 0 {
+					out[len(out)-1] = ast.NewText(t.Position(), trimmed)
+				}
+			}
+		}
+
+		// Leading whitespace on the next line is ignored; the text node may
+		// disappear entirely.
+		next := i + 1
+		if next < len(nodes) {
+			if t, ok := nodes[next].(*ast.Text); ok {
+				trimmed := strings.TrimLeft(t.Value, " \t")
+				if trimmed == "" {
+					next++
+				} else if len(trimmed) != len(t.Value) {
+					nodes[next] = ast.NewText(t.Position(), trimmed)
+				}
+			}
+		}
+		if next >= len(nodes) {
+			break
+		}
+
+		if soft, ok := n.(*ast.SoftBreak); ok && trailing >= 2 {
+			n = ast.NewHardBreak(soft.Position())
+		}
+		out = append(out, n)
+		i = next - 1
+	}
+	return out
+}
+
+func isLineBreak(n ast.Node) bool {
+	switch n.(type) {
+	case *ast.SoftBreak, *ast.HardBreak:
+		return true
+	}
+	return false
+}
+
 func mergeTextNodes(nodes []ast.Node) []ast.Node {
 	if len(nodes) <= 1 {
 		return nodes

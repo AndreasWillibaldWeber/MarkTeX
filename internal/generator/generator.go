@@ -54,6 +54,11 @@ type Generator struct {
 
 	// listStack tracks the nesting depth of lists for indentation
 	listStack []listFrame
+
+	// inHeading is true while inside a Heading. Hard breaks render as a
+	// space there: \\ inside a sectioning command breaks the table of
+	// contents and hyperref bookmarks.
+	inHeading bool
 }
 
 type listFrame struct {
@@ -156,10 +161,12 @@ var headingCommands = [7]string{
 func (g *Generator) EnterHeading(n *ast.Heading) visitor.WalkAction {
 	cmd := headingCommands[n.Level]
 	g.writef("%s{", cmd)
+	g.inHeading = true
 	return visitor.WalkContinue
 }
 
 func (g *Generator) LeaveHeading(_ *ast.Heading) visitor.WalkAction {
+	g.inHeading = false
 	g.write("}\n\n")
 	return visitor.WalkContinue
 }
@@ -361,6 +368,10 @@ func (g *Generator) EnterSoftBreak(_ *ast.SoftBreak) visitor.WalkAction {
 }
 
 func (g *Generator) EnterHardBreak(_ *ast.HardBreak) visitor.WalkAction {
+	if g.inHeading {
+		g.write(" ")
+		return visitor.WalkContinue
+	}
 	g.write("\\\\\n")
 	return visitor.WalkContinue
 }

@@ -738,11 +738,11 @@ func TestDocumentMetaMixedWithRefs(t *testing.T) {
 
 // ── Setext headings (issue #2) ────────────────────────────────────────────────
 
-// setextExtensionSets covers the configurations in which issue #2 manifested
-// differently: without tables the `---` underline became a thematic break,
-// with tables (the CLI default) it became a one-column table. Options treats
-// an Extensions value of 0 as ExtAll, so "no-tables" uses a non-zero mask.
-var setextExtensionSets = map[string]transpiler.Extension{
+// extensionSets covers the configurations under which parser bugs have shown
+// different symptoms (issue #2: without tables the `---` underline became a
+// thematic break, with tables it became a one-column table). Options treats an
+// Extensions value of 0 as ExtAll, so "no-tables" uses a non-zero mask.
+var extensionSets = map[string]transpiler.Extension{
 	"no-tables": transpiler.ExtStrikethrough,
 	"tables":    transpiler.ExtTables,
 	"all":       transpiler.ExtAll,
@@ -781,7 +781,7 @@ func assertInOrder(t *testing.T, got string, subs ...string) {
 func TestSetextHeadingIssue02(t *testing.T) {
 	const src = "Also header 2 (not a table!)\n-------------\n"
 	const want = "\\subsection{Also header 2 (not a table!)}\n\n"
-	for name, ext := range setextExtensionSets {
+	for name, ext := range extensionSets {
 		t.Run(name, func(t *testing.T) {
 			if got := transpile(t, src, ext); got != want {
 				t.Errorf("want exactly %q\ngot:\n%s", want, got)
@@ -810,7 +810,7 @@ func TestSetextHeadings(t *testing.T) {
 		{"heading after a paragraph", "intro\n\nTitle\n---", `\subsection{Title}`},
 		{"crlf line endings", "Title\r\n---\r\n", `\subsection{Title}`},
 	}
-	for name, ext := range setextExtensionSets {
+	for name, ext := range extensionSets {
 		for _, tc := range tests {
 			t.Run(name+"/"+tc.name, func(t *testing.T) {
 				got := transpile(t, tc.input, ext)
@@ -844,7 +844,7 @@ func TestSetextUnderlineNotRecognised(t *testing.T) {
 		{"no open paragraph after list item", "- item\n===", `\item item`},
 		{"underline-like text at start of input", "---\nText", "Text"},
 	}
-	for name, ext := range setextExtensionSets {
+	for name, ext := range extensionSets {
 		for _, tc := range tests {
 			t.Run(name+"/"+tc.name, func(t *testing.T) {
 				got := transpile(t, tc.input, ext)
@@ -881,7 +881,7 @@ func TestThematicBreaksUnaffectedBySetextPrecedence(t *testing.T) {
 		{"directly after ordered list", "1. item\n---", `\item item`},
 		{"between paragraphs", "Before\n\n---\n\nAfter", "After"},
 	}
-	for name, ext := range setextExtensionSets {
+	for name, ext := range extensionSets {
 		for _, tc := range tests {
 			t.Run(name+"/"+tc.name, func(t *testing.T) {
 				got := transpile(t, tc.input, ext)
@@ -987,4 +987,188 @@ func TestSetextHeadingSequence(t *testing.T) {
 		`\subsection{Section}`,
 		"Body paragraph.",
 	)
+}
+
+// ── Hard and soft line breaks (issues #4 and #5) ─────────────────────────────
+
+// TestHardLineBreakIssue04 reproduces the exact report from issue #4: two
+// trailing spaces before a newline inside a paragraph produce `\\`.
+func TestHardLineBreakIssue04(t *testing.T) {
+	const src = "This is line 1 with two trailing spaces.  \nThis is line 2.\n"
+	const want = "This is line 1 with two trailing spaces.\\\\\nThis is line 2.\n\n"
+	for name, ext := range extensionSets {
+		t.Run(name, func(t *testing.T) {
+			if got := transpile(t, src, ext); got != want {
+				t.Errorf("want exactly %q\ngot:        %q", want, got)
+			}
+		})
+	}
+}
+
+// TestHardLineBreakInBlockQuoteIssue05 reproduces the exact report from
+// issue #5: the same rule applies to paragraphs inside block quotes.
+func TestHardLineBreakInBlockQuoteIssue05(t *testing.T) {
+	const src = "> And this one  \n> has multiple lines  \n> in it.\n"
+	const want = "\\begin{quote}\nAnd this one\\\\\nhas multiple lines\\\\\nin it.\n\n\\end{quote}\n\n"
+	for name, ext := range extensionSets {
+		t.Run(name, func(t *testing.T) {
+			if got := transpile(t, src, ext); got != want {
+				t.Errorf("want exactly %q\ngot:        %q", want, got)
+			}
+		})
+	}
+}
+
+func TestHardLineBreaks(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"two trailing spaces", "a  \nb", "a\\\\\nb"},
+		{"three trailing spaces", "a   \nb", "a\\\\\nb"},
+		{"many trailing spaces", "a        \nb", "a\\\\\nb"},
+		{"backslash before newline", "a\\\nb", "a\\\\\nb"},
+		{"leading spaces on next line dropped", "a  \n   b", "a\\\\\nb"},
+		{"after strong", "**bold**  \nnext", "\\textbf{bold}\\\\\nnext"},
+		{"after code span", "`code`  \nnext", "\\texttt{code}\\\\\nnext"},
+		{"after escape", "x\\*  \nnext", "x*\\\\\nnext"},
+		{"after link", "[t](http://x)  \nnext", "\\href{http://x}{t}\\\\\nnext"},
+		{"inside link text", "[link  \ntext](http://x)", "\\href{http://x}{link\\\\\ntext}"},
+		{"consecutive breaks", "l1  \nl2  \nl3", "l1\\\\\nl2\\\\\nl3"},
+		{"mixed soft and hard", "l1\nl2  \nl3", "l1 l2\\\\\nl3"},
+		{"crlf input", "a  \r\nb\r\n", "a\\\\\nb"},
+		{"trailing tab after spaces", "a  \t\nb", "a\\\\\nb"},
+	}
+	for name, ext := range extensionSets {
+		for _, tc := range tests {
+			t.Run(name+"/"+tc.name, func(t *testing.T) {
+				got := transpile(t, tc.input, ext)
+				if !strings.Contains(got, tc.want) {
+					t.Errorf("missing %q\ngot: %q", tc.want, got)
+				}
+				if strings.Contains(got, " \\\\") {
+					t.Errorf("whitespace left before line break\ngot: %q", got)
+				}
+			})
+		}
+	}
+}
+
+func TestSoftLineBreaks(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"plain newline", "a\nb", "a b"},
+		{"one trailing space", "a \nb", "a b"},
+		{"leading spaces on next line", "a\n   b", "a b"},
+		{"trailing and leading spaces", "a \n  b", "a b"},
+		{"across three lines", "a\nb\nc", "a b c"},
+	}
+	for name, ext := range extensionSets {
+		for _, tc := range tests {
+			t.Run(name+"/"+tc.name, func(t *testing.T) {
+				got := transpile(t, tc.input, ext)
+				if !strings.Contains(got, tc.want) {
+					t.Errorf("missing %q\ngot: %q", tc.want, got)
+				}
+				if strings.Contains(got, `\\`) {
+					t.Errorf("soft break rendered as hard break\ngot: %q", got)
+				}
+			})
+		}
+	}
+}
+
+// TestNoHardBreakAtBlockEnd covers CommonMark 6.7: a hard line break never
+// occurs at the end of a block. A trailing `\\` would also be a LaTeX error.
+func TestNoHardBreakAtBlockEnd(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		wants []string
+	}{
+		{"paragraph before blank line", "end.  \n\nnext", []string{"end.\n\nnext"}},
+		{"last paragraph of document", "end.  ", []string{"end.\n\n"}},
+		{"last line of block quote", "> q  \n\nafter", []string{"q\n\n\\end{quote}", "after"}},
+		{"list items", "- item  \n- two  ", []string{"\\item item\n", "\\item two\n"}},
+		{"backslash at paragraph end is literal", "a\\", []string{"a\\textbackslash{}"}},
+		{"leading spaces of paragraph dropped", "   a\nb", []string{"\na b\n"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := "\n" + transpile(t, tc.input, transpiler.ExtAll)
+			for _, w := range tc.wants {
+				if !strings.Contains(got, w) {
+					t.Errorf("missing %q\ngot: %q", w, got)
+				}
+			}
+			if strings.Contains(got, `\\`) {
+				t.Errorf("unexpected hard break\ngot: %q", got)
+			}
+		})
+	}
+}
+
+// TestHardBreakInsideHeadingRendersAsSpace guards the generator: `\\` inside
+// a sectioning command breaks the table of contents, so heading content joins
+// its lines with a space instead.
+func TestHardBreakInsideHeadingRendersAsSpace(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"two spaces in setext h2", "Line one  \nline two\n---", `\subsection{Line one line two}`},
+		{"backslash in setext h1", "Line one\\\nline two\n===", `\section{Line one line two}`},
+		{"atx trailing spaces", "# ATX heading  ", `\section{ATX heading}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := transpile(t, tc.input, transpiler.ExtAll)
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("missing %q\ngot: %q", tc.want, got)
+			}
+			if strings.Contains(got, `\\`) {
+				t.Errorf("hard break leaked into heading\ngot: %q", got)
+			}
+		})
+	}
+}
+
+// TestCodeBlocksKeepTrailingSpaces makes sure line-break handling never
+// touches verbatim content.
+func TestCodeBlocksKeepTrailingSpaces(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"fenced", "```\nfoo  \nbar\n```", "foo  \nbar"},
+		{"indented", "    foo  \n    bar", "foo  \nbar"},
+		{"code span with inner spaces", "`a  b`", `\texttt{a  b}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := transpile(t, tc.input, transpiler.ExtAll)
+			if !strings.Contains(got, tc.want) {
+				t.Errorf("missing %q\ngot: %q", tc.want, got)
+			}
+			if strings.Contains(got, `\\`) {
+				t.Errorf("hard break inside code\ngot: %q", got)
+			}
+		})
+	}
+}
+
+// TestTableCellsUnaffectedByLineBreakHandling: cell padding is trimmed and
+// row terminators are the only `\\` in the output.
+func TestTableCellsUnaffectedByLineBreakHandling(t *testing.T) {
+	got := transpile(t, "| a  | b |\n|---|---|\n| x  | y |", transpiler.ExtTables)
+	assertInOrder(t, got, "a & b \\\\\n", `\midrule`, "x & y \\\\\n", `\bottomrule`)
+	if n := strings.Count(got, `\\`); n != 2 {
+		t.Errorf("want exactly 2 row terminators, got %d\ngot: %q", n, got)
+	}
 }

@@ -94,8 +94,10 @@ func (p *blockParser) parse() *ast.Document {
 		if para == nil {
 			return
 		}
-		// Join paragraph lines, parse inline content, attach to para
-		raw := strings.Join(paraLines, "\n")
+		// Join paragraph lines, parse inline content, attach to para.
+		// Initial and final whitespace is not paragraph content (CommonMark
+		// 4.8), and trailing spaces on the last line are not a hard break.
+		raw := strings.Trim(strings.Join(paraLines, "\n"), " \t")
 		inlines := parseInline(raw, paraPos, p.ext, p.refs.citations, p.refs.figures, p.refs.tables)
 		for _, n := range inlines {
 			ast.AppendChild(para, n)
@@ -294,7 +296,7 @@ func (p *blockParser) parse() *ast.Document {
 			{
 				flushParagraph()
 				flushIndented()
-				itemContent := string(content[actualIndent+width:])
+				itemContent := strings.TrimRight(string(content[actualIndent+width:]), " \t")
 				list := ast.NewOrderedList(nodePos, num, delim)
 				item := ast.NewListItem(nodePos)
 				// Parse item content (may be multi-line; for now single-line)
@@ -315,7 +317,7 @@ func (p *blockParser) parse() *ast.Document {
 			flushParagraph()
 			flushIndented()
 			actualIndent := indent
-			itemContent := string(content[actualIndent+width:])
+			itemContent := strings.TrimRight(string(content[actualIndent+width:]), " \t")
 			list := ast.NewBulletList(nodePos, marker)
 			item := ast.NewListItem(nodePos)
 			inlines := parseInline(itemContent, nodePos, p.ext, p.refs.citations, p.refs.figures, p.refs.tables)
@@ -663,13 +665,13 @@ func (p *blockParser) parseListItemLine(l *line, marker byte, ordered bool) *ast
 		if width == 0 {
 			return nil
 		}
-		itemContent = string(content[width:])
+		itemContent = strings.TrimRight(string(content[width:]), " \t")
 	} else {
 		_, width := parseBulletListMarker(content)
 		if width == 0 {
 			return nil
 		}
-		itemContent = string(content[width:])
+		itemContent = strings.TrimRight(string(content[width:]), " \t")
 	}
 	item := ast.NewListItem(pos)
 	inlines := parseInline(itemContent, pos, p.ext, p.refs.citations, p.refs.figures, p.refs.tables)
